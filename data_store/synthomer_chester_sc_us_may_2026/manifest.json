@@ -1,0 +1,18 @@
+{
+  "fetched_at": "2026-06-27T16:30:42.262808",
+  "site_name": "Synthomer Chester SC (US)",
+  "reporting_month": "May 2026",
+  "start_date": "2026-05-01",
+  "end_date": "2026-05-31",
+  "telemetry_days": 90,
+  "controllers": [
+    "84253f5ee2c1"
+  ],
+  "files": {
+    "controllers": "controllers.json",
+    "service_notes": "service_notes.json",
+    "ade_data": "ade_data.json",
+    "scc": "scc.json",
+    "telemetry_dir": "telemetry/"
+  }
+}

@@ -1,0 +1,412 @@
+{
+  "site": "Synthomer Chester SC (US)",
+  "month": "May 2026",
+  "total_score": 143.0,
+  "total_max": 161,
+  "percentage": 88.8,
+  "grade": "B",
+  "failed_checks": [
+    {
+      "category": "Corrosion Control",
+      "check": "Status label present",
+      "max": 3,
+      "score": 0.0,
+      "passed": false,
+      "detail": ""
+    },
+    {
+      "category": "Scale Control",
+      "check": "Status matches % in range",
+      "max": 8,
+      "score": 0.0,
+      "passed": false,
+      "detail": "No status label found in scale narrative"
+    },
+    {
+      "category": "Report Structure",
+      "check": "Prepared Date / Prepared By present",
+      "max": 3,
+      "score": 0.0,
+      "passed": false,
+      "detail": ""
+    },
+    {
+      "category": "Report Structure",
+      "check": "Report Status field present",
+      "max": 2,
+      "score": 0.0,
+      "passed": false,
+      "detail": ""
+    },
+    {
+      "category": "Report Structure",
+      "check": "Final Release Approval checklist present",
+      "max": 2,
+      "score": 0.0,
+      "passed": false,
+      "detail": ""
+    }
+  ],
+  "categories": {
+    "Narrative Structure": {
+      "score": 15.0,
+      "max": 15,
+      "pct": 100.0,
+      "checks": [
+        {
+          "category": "Narrative Structure",
+          "check": "All narrative keys populated",
+          "max": 10,
+          "score": 10.0,
+          "passed": "100%",
+          "detail": "Present: 11/11."
+        },
+        {
+          "category": "Narrative Structure",
+          "check": "No placeholder text",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": "Clean"
+        }
+      ]
+    },
+    "Corrosion Control": {
+      "score": 26.0,
+      "max": 29,
+      "pct": 89.7,
+      "checks": [
+        {
+          "category": "Corrosion Control",
+          "check": "Exact MS corrosion wording",
+          "max": 8,
+          "score": 8,
+          "passed": true,
+          "detail": "Must contain: 'mild steel corrosion rate was X MPY against the target of within 3.0 MPY'"
+        },
+        {
+          "category": "Corrosion Control",
+          "check": "Exact Cu corrosion wording",
+          "max": 8,
+          "score": 8,
+          "passed": true,
+          "detail": "Must contain: 'copper corrosion rate was X MPY against the target of within 0.5 MPY'"
+        },
+        {
+          "category": "Corrosion Control",
+          "check": "MS mean value accuracy",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": "Reported: 0.24, Expected: ~0.24"
+        },
+        {
+          "category": "Corrosion Control",
+          "check": "Cu mean value accuracy",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": "Reported: 0.22, Expected: ~0.22"
+        },
+        {
+          "category": "Corrosion Control",
+          "check": "Status label present",
+          "max": 3,
+          "score": 0.0,
+          "passed": false,
+          "detail": ""
+        }
+      ]
+    },
+    "Scale Control": {
+      "score": 22.0,
+      "max": 30,
+      "pct": 73.3,
+      "checks": [
+        {
+          "category": "Scale Control",
+          "check": "Scale Control discusses Traced Product only",
+          "max": 6,
+          "score": 6,
+          "passed": true,
+          "detail": "Clean"
+        },
+        {
+          "category": "Scale Control",
+          "check": "Status matches % in range",
+          "max": 8,
+          "score": 0.0,
+          "passed": false,
+          "detail": "No status label found in scale narrative"
+        },
+        {
+          "category": "Scale Control",
+          "check": "Action Required language when <25%",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Scale Control",
+          "check": "Observation present (HIGH product)",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Scale Control",
+          "check": "Recommendation present (HIGH product)",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Scale Control",
+          "check": "Root cause references conductivity behaviour",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": "Scale Control must explain root cause using conductivity comparison"
+        }
+      ]
+    },
+    "Microbial Control": {
+      "score": 26,
+      "max": 26,
+      "pct": 100.0,
+      "checks": [
+        {
+          "category": "Microbial Control",
+          "check": "No absolute ORP values in narrative",
+          "max": 8,
+          "score": 8,
+          "passed": true,
+          "detail": "Clean"
+        },
+        {
+          "category": "Microbial Control",
+          "check": "FRC not-available statement present",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": "Must state FRC will be checked at next service visit"
+        },
+        {
+          "category": "Microbial Control",
+          "check": "ORP spike/Delta ORP comment present",
+          "max": 6,
+          "score": 6,
+          "passed": true,
+          "detail": "MANDATORY in every report"
+        },
+        {
+          "category": "Microbial Control",
+          "check": "No 'relay firing' language",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": "Must use 'biocide dosing was triggered' / 'pump was activated' instead"
+        },
+        {
+          "category": "Microbial Control",
+          "check": "Microbial doesn't discuss pH/turbidity/cell fouling",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": "Clean"
+        }
+      ]
+    },
+    "Water Efficiency": {
+      "score": 7,
+      "max": 7,
+      "pct": 100.0,
+      "checks": [
+        {
+          "category": "Water Efficiency",
+          "check": "Conductivity discussed",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Water Efficiency",
+          "check": "COC / cycles of concentration mentioned",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": ""
+        }
+      ]
+    },
+    "Product Efficiency": {
+      "score": 5,
+      "max": 5,
+      "pct": 100.0,
+      "checks": [
+        {
+          "category": "Product Efficiency",
+          "check": "Product Name (generic OK \u2014 none in SCC)",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": ""
+        }
+      ]
+    },
+    "Proactive System Support": {
+      "score": 7,
+      "max": 7,
+      "pct": 100.0,
+      "checks": [
+        {
+          "category": "Proactive System Support",
+          "check": "Not titled 'Alarms'",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": "Section must be titled 'Proactive System Support'"
+        },
+        {
+          "category": "Proactive System Support",
+          "check": "'No service notes' stated when none exist",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": ""
+        }
+      ]
+    },
+    "Report Structure": {
+      "score": 35.0,
+      "max": 42,
+      "pct": 83.3,
+      "checks": [
+        {
+          "category": "Report Structure",
+          "check": "Markdown report exists",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Title page heading present",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Prepared Date / Prepared By present",
+          "max": 3,
+          "score": 0.0,
+          "passed": false,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Report Status field present",
+          "max": 2,
+          "score": 0.0,
+          "passed": false,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Corrosion Control",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Scale Control",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Microbial Control",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Water Efficiency",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Product Efficiency",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Proactive System Support",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Performance Summary section present",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Performance Summary table present",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "At least 1 chart included",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": "Chart-like patterns found: 0"
+        },
+        {
+          "category": "Report Structure",
+          "check": "No absolute ORP values in narrative text",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": "Clean"
+        },
+        {
+          "category": "Report Structure",
+          "check": "Final Release Approval checklist present",
+          "max": 2,
+          "score": 0.0,
+          "passed": false,
+          "detail": ""
+        }
+      ]
+    }
+  }
+}

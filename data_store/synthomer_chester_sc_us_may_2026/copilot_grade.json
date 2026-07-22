@@ -1,0 +1,99 @@
+{
+  "site": "Synthomer Chester SC (US)",
+  "month": "May 2026",
+  "graded_at": "2026-07-14T00:00:00Z",
+  "dimensions": {
+    "factual_accuracy": {
+      "score": 7,
+      "weight": 0.25,
+      "findings": [
+        "Correct: Mild steel corrosion 0.24 MPY matches expected value",
+        "Correct: Copper corrosion 0.2200 MPY matches expected value",
+        "Correct: Corrosion status 'Good' matches expected",
+        "Correct: Narrative states Traced Product % in range as 10.0% matching expected",
+        "Error: Markdown report states '3 of 20 readings, 15%' for Traced Product in-range, but expected value is 10.0% (2 of 20)",
+        "Correct: Conductivity % in range 100.0% matches expected",
+        "Correct: FRC stated as not available, matching expected",
+        "Correct: Scale status 'Action Required' in narrative matches expected",
+        "Correct: Microbial status 'Stable' in narrative matches expected",
+        "Correct: Water Efficiency status 'Good' in narrative matches expected",
+        "Correct: Traced Product direction HIGH correctly identified as overfeeding"
+      ]
+    },
+    "rule_compliance": {
+      "score": 6,
+      "weight": 0.25,
+      "findings": [
+        "Correct: Scale narrative discusses Traced Product control, not conductivity",
+        "Correct: No absolute ORP values reported in narrative or markdown",
+        "Correct: Uses 'biocide dosing was triggered' not 'relay firing'",
+        "Correct: ORP spike comment present in orp_chart_comment",
+        "Correct: Proactive System Support title used (not 'Alarms')",
+        "Correct: Observation + Recommendation present for HIGH condition in scale_narrative",
+        "Correct: Root cause uses conductivity comparison ('Conductivity was stable during the same period')",
+        "Violation: Markdown report Executive Summary Scale Control section discusses conductivity instead of Traced Product — rule says Scale Control discusses Traced Product ONLY",
+        "Violation: No explicit status labels (Good/Action Required/Stable) in the markdown report section headings or opening lines",
+        "Violation: Markdown report lacks Final Release Approval checklist",
+        "Violation: No 'Report Status' field in markdown report"
+      ]
+    },
+    "report_structure": {
+      "score": 6,
+      "weight": 0.15,
+      "findings": [
+        "Present: Title page with site, month, controller, prepared date",
+        "Missing: 'Prepared By' field on title page",
+        "Present: Executive Summary with narrative prose",
+        "Issue: Executive Summary sections do not align with expected 6 sections — Scale Control discusses conductivity, not traced product",
+        "Present: Performance Summary table",
+        "Present: Charts section with comments (tabular format, not graphical)",
+        "Present: Follow-Up Items section",
+        "Missing: Final Release Approval checklist entirely absent",
+        "Missing: Report Status field",
+        "Structure is within page limit and uses page breaks appropriately"
+      ]
+    },
+    "writing_quality": {
+      "score": 7,
+      "weight": 0.15,
+      "findings": [
+        "Narrative cache text is professional, specific, and actionable",
+        "Chart comments cite specific values and give concrete recommendations",
+        "Markdown report is overly cautious with disclaimers ('not available from provided data', 'SCC Section 2 does not include...')",
+        "Markdown report hedges excessively rather than stating conclusions confidently",
+        "Narrative follows observation-recommendation-status pattern well",
+        "No placeholder text or generic filler present"
+      ]
+    },
+    "training_report_alignment": {
+      "score": 6,
+      "weight": 0.20,
+      "findings": [
+        "Narrative cache aligns well with training report tone and depth",
+        "Markdown report diverges significantly from narrative cache content — appears to be independently generated",
+        "Markdown report is more disclaimer-heavy and less assertive than training reports",
+        "Training reports state values and status confidently; this report repeatedly notes data limitations",
+        "The markdown report does not use the narrative cache text, creating inconsistency between the two outputs",
+        "A Buckman engineer would likely need substantial edits to the markdown report to match expected style"
+      ]
+    }
+  },
+  "weighted_score": 6.45,
+  "grade": "D",
+  "critical_issues": [
+    "Markdown report states Traced Product in-range as 15% (3/20) but expected value is 10.0% — factual discrepancy between narrative and report",
+    "Markdown Executive Summary Scale Control section discusses conductivity instead of Traced Product, violating the rule that Scale Control discusses Traced Product ONLY",
+    "No status labels (Good/Action Required/Stable) appear in the markdown report section openings",
+    "Final Release Approval checklist is entirely missing from the markdown report"
+  ],
+  "improvement_suggestions": [
+    "Align markdown report Traced Product % in-range with the expected 10.0% value used in the narrative cache",
+    "Rewrite Executive Summary Scale Control to lead with Traced Product performance and status, not conductivity",
+    "Add explicit status labels at the start of each Executive Summary section (e.g., 'Status: Action Required')",
+    "Add a Final Release Approval checklist section at the end of the report",
+    "Add 'Prepared By' and 'Report Status' fields to the title page",
+    "Reduce disclaimer language in the markdown report — state conclusions based on available data rather than repeatedly noting limitations",
+    "Use the narrative cache content directly in the markdown report to ensure consistency"
+  ],
+  "overall_assessment": "The narrative cache is well-written and factually accurate, but the markdown report diverges significantly — it discusses the wrong parameters in key sections, reports a different % in-range value for Traced Product, and lacks required structural elements (status labels, checklist). The disconnect between the two outputs and excessive hedging in the markdown report lower the overall grade."
+}
