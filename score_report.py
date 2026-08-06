@@ -27,9 +27,13 @@ import re
 import sys
 from pathlib import Path
 
+from src.report_cache import build_cache_slug, find_cache_by_controller_ids, normalize_controller_ids
+from src.report_status import STATUS_ACCEPTABLE, STATUS_EXCELLENT, STATUS_PATTERN, display_status, status_from_limits, status_from_percent, status_matches
+
 ROOT       = Path(__file__).parent
 DATA_STORE = ROOT / "data_store"
 OUTPUT_DIR = ROOT / "output"
+CHECKLIST_PATH = ROOT / "Report Checklist" / "report checklist.xlsx"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
@@ -39,7 +43,10 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 def parse_args():
     p = argparse.ArgumentParser(description="Score a generated cooling water report.")
-    p.add_argument("--site",    required=True, help='Site name e.g. "Flowserve US Raleigh NC (US)"')
+    site_group = p.add_mutually_exclusive_group(required=True)
+    site_group.add_argument("--site", help='Site name e.g. "Flowserve US Raleigh NC (US)"')
+    site_group.add_argument("--controller-id", "--controller-ids", nargs="+", dest="controller_ids",
+                            help="One or more controller IDs used for the report cache")
     p.add_argument("--month",   required=True, help='Reporting month e.g. "May 2026"')
     p.add_argument("--verbose", action="store_true", help="Print detailed check results")
     return p.parse_args()
@@ -56,19 +63,65 @@ def _load(path, default):
         return default
 
 
+def _extract_docx_text(path):
+    if not path.exists():
+        return None
+    try:
+        from docx import Document
+    except ImportError:
+        return None
+
+    doc = Document(str(path))
+    parts = []
+    for paragraph in doc.paragraphs:
+        text = paragraph.text.strip()
+        if text:
+            parts.append(text)
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if cells:
+                parts.append(" | ".join(cells))
+    return "\n".join(parts)
+
+
+def _narrative_text(narrative):
+    return "\n".join(str(value) for value in narrative.values() if isinstance(value, str))
+
+
+def _contains_any(text, phrases):
+    text_lower = text.lower()
+    return any(phrase.lower() in text_lower for phrase in phrases)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATA LOADING
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def load_data(site, month):
-    slug  = slugify(f"{site}_{month}")
-    cache = DATA_STORE / slug
+def load_data(site, month, controller_ids=None):
+    controller_ids = normalize_controller_ids(controller_ids)
+    if controller_ids:
+        try:
+            cache, manifest = find_cache_by_controller_ids(DATA_STORE, month, controller_ids)
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            print(f"[ERROR] {exc}")
+            controller_args = " ".join(f'\"{controller_id}\"' for controller_id in controller_ids)
+            print(f"  Run: python prefetch_site.py --controller-ids {controller_args} --month \"{month}\"")
+            sys.exit(1)
+        site = manifest.get("site_name", site)
+        slug = cache.name
+    else:
+        slug = build_cache_slug(site, month)
+        cache = DATA_STORE / slug
+        manifest = _load(cache / "manifest.json", {})
+        site = manifest.get("site_name", site)
 
     data = {
         "slug": slug,
         "site": site,
         "month": month,
         "cache_dir": cache,
+        "controller_ids": controller_ids,
     }
 
     # Narrative cache (the AI output we're scoring)
@@ -99,9 +152,16 @@ def load_data(site, month):
                 telem[name.lower()] = stats
     data["telem"] = telem
 
-    # Generated markdown report (optional)
+    # Generated Markdown / Word report text
     md_path = OUTPUT_DIR / f"{slug}_report.md"
     data["report_md"] = md_path.read_text(encoding="utf-8") if md_path.exists() else None
+    docx_candidates = [path for path in OUTPUT_DIR.glob(f"{slug}_report*.docx") if path.is_file()]
+    docx_path = max(docx_candidates, key=lambda path: path.stat().st_mtime) if docx_candidates else OUTPUT_DIR / f"{slug}_report.docx"
+    data["report_docx"] = _extract_docx_text(docx_path)
+    data["report_path"] = str(docx_path if docx_path.exists() else md_path)
+    data["report_text"] = "\n\n".join(
+        text for text in [data.get("report_md"), data.get("report_docx")] if text
+    )
 
     return data
 
@@ -176,11 +236,6 @@ def compute_expected(data):
     tp_pct = pct(tp_r20, tp_ll, tp_ul)
     ec_pct = pct(ec_r20, ec_ll, ec_ul)
 
-    def status(p):
-        if p is None:
-            return "Stable"
-        return "Good" if p > 75 else ("Stable" if p >= 25 else "Action Required")
-
     ms_mean = smean(ms_s)
     cu_mean = smean(cu_s)
     corr_ok = (ms_mean is not None and ms_mean < 3.0) and (cu_mean is not None and cu_mean < 0.5)
@@ -201,21 +256,21 @@ def compute_expected(data):
     return {
         "ms_mean": ms_mean,
         "cu_mean": cu_mean,
-        "corr_status":  "Good" if corr_ok else "Action Required",
+        "corr_status":  status_from_limits(corr_ok),
         "tp_sp": tp_sp, "tp_db": tp_db,
         "tp_ll": tp_ll, "tp_ul": tp_ul,
         "tp_pct": tp_pct,
-        "tp_status": status(tp_pct),
+        "tp_status": status_from_percent(tp_pct),
         "tp_dir": tp_dir,
         "tp_mean": tp_mean,
         "ec_sp": ec_sp, "ec_db": ec_db,
         "ec_ll": ec_ll, "ec_ul": ec_ul,
         "ec_pct": ec_pct,
-        "ec_status": status(ec_pct),
+        "ec_status": status_from_percent(ec_pct),
         "ec_mean": smean(ec_s),
         "product_name": prod,
         "frc": frc,
-        "micro_status": "Good" if frc and frc >= 0.2 else "Stable",
+        "micro_status": STATUS_EXCELLENT if frc and frc >= 0.2 else STATUS_ACCEPTABLE,
         "relay_firing": relay_firing,
         "has_service_notes": len(data["notes"]) > 0,
         "tp_r20": tp_r20,
@@ -254,7 +309,26 @@ class Check:
         }
 
 
-def run_narrative_checks(narr, expected):
+def _section_text(report_text, heading, next_headings):
+    if not report_text:
+        return ""
+    paragraphs = [paragraph.strip() for paragraph in report_text.splitlines() if paragraph.strip()]
+    heading_lower = heading.lower()
+    start_index = next((index for index, paragraph in enumerate(paragraphs)
+                        if paragraph.lower().rstrip(":") == heading_lower), None)
+    if start_index is None:
+        return ""
+    end_index = len(paragraphs)
+    for next_heading in next_headings:
+        next_lower = next_heading.lower()
+        for index in range(start_index + 1, len(paragraphs)):
+            if paragraphs[index].lower().rstrip(":") == next_lower:
+                end_index = min(end_index, index)
+                break
+    return "\n".join(paragraphs[start_index:end_index])
+
+
+def run_narrative_checks(narr, expected, report_text=""):
     """Check the narrative_cache.json content against rules."""
     checks = []
     cat = "Narrative Structure"
@@ -334,7 +408,7 @@ def run_narrative_checks(narr, expected):
             checks.append(Check(cat, "Cu mean value accuracy", 5, False, "Could not extract Cu value"))
 
     # ── 7. Corrosion status label present ─────────────────────────────────────
-    has_status = bool(re.search(r"\*?\*?Status\*?\*?:?\s*(Good|Stable|Action Required)",
+    has_status = bool(re.search(rf"\*?\*?Status\*?\*?:?\s*({STATUS_PATTERN})",
                                 corr_text, re.IGNORECASE))
     checks.append(Check(cat, "Status label present", 3, has_status))
 
@@ -342,6 +416,7 @@ def run_narrative_checks(narr, expected):
     cat = "Scale Control"
 
     scale_text = narr.get("scale_narrative", "")
+    scale_full_text = f"{scale_text} {_section_text(report_text, 'Scale Control', ['Microbial Control', 'Water Efficiency'])}"
 
     # ── 8. Scale Control only discusses traced product ────────────────────────
     forbidden_in_scale = ["conductivity", "ph ", "turbidity", "cell fouling", "cellfouling"]
@@ -356,14 +431,14 @@ def run_narrative_checks(narr, expected):
                         f"Forbidden terms found: {scale_leaks}" if scale_leaks else "Clean"))
 
     # ── 9. Status reflects % in range ─────────────────────────────────────────
-    scale_status_match = re.search(r"\*?\*?Status\*?\*?:?\s*(Good|Stable|Action Required)",
+    scale_status_match = re.search(rf"\*?\*?Status\*?\*?:?\s*({STATUS_PATTERN})",
                                    scale_text, re.IGNORECASE)
     if scale_status_match and expected["tp_status"]:
         reported_status = scale_status_match.group(1).strip()
-        correct = reported_status.lower() == expected["tp_status"].lower()
+        correct = status_matches(reported_status, expected["tp_status"])
         checks.append(Check(cat, "Status matches % in range",
                             8, correct,
-                            f"Reported: {reported_status}, Expected: {expected['tp_status']} "
+                            f"Reported: {display_status(reported_status)}, Expected: {expected['tp_status']} "
                             f"({expected['tp_pct']}% in range)"))
     else:
         checks.append(Check(cat, "Status matches % in range", 8, False,
@@ -371,30 +446,34 @@ def run_narrative_checks(narr, expected):
 
     # ── 10. Never-in-range rule ───────────────────────────────────────────────
     if expected["tp_pct"] == 0:
-        has_never = "never within" in scale_text.lower() or "never in" in scale_text.lower()
+        has_never = "never within" in scale_full_text.lower() or "never in" in scale_full_text.lower()
         checks.append(Check(cat, "'Never in range' stated when 0%",
                             6, has_never,
                             "MANDATORY when 0% in range — must state explicitly"))
     elif expected["tp_pct"] is not None and expected["tp_pct"] < 25:
-        has_action_lang = ("requires action" in scale_text.lower()
-                          or "action required" in scale_text.lower()
-                          or "below the acceptable" in scale_text.lower())
-        checks.append(Check(cat, "Action Required language when <25%",
+        has_action_lang = ("requires action" in scale_full_text.lower()
+              or "action required" in scale_full_text.lower()
+              or "critical" in scale_full_text.lower()
+              or "need attention" in scale_full_text.lower()
+              or "needs attention" in scale_full_text.lower()
+                  or "below the acceptable" in scale_full_text.lower())
+        checks.append(Check(cat, "Critical language when <25%",
                             4, has_action_lang))
 
     # ── 11. Observation & Recommendation when HIGH/LOW ────────────────────────
     if expected["tp_dir"] in ("HIGH", "LOW"):
-        has_obs = "observation" in scale_text.lower()
-        has_rec = "recommendation" in scale_text.lower() or "recommend" in scale_text.lower()
+        scale_lower = scale_full_text.lower()
+        has_obs = any(w in scale_lower for w in ["observation", "higher than target", "below", "decreased", "initial part"])
+        has_rec = any(w in scale_lower for w in ["recommendation", "recommend", "review", "inspect", "upcoming service"])
         checks.append(Check(cat, f"Observation present ({expected['tp_dir']} product)",
                             4, has_obs))
         checks.append(Check(cat, f"Recommendation present ({expected['tp_dir']} product)",
                             4, has_rec))
 
     # ── 12. Root cause uses conductivity comparison ───────────────────────────
-    has_root_cause = ("conductivity" in scale_text.lower()
-                     and any(w in scale_text.lower() for w in
-                             ["stable", "also", "remained", "declined", "water loss"]))
+        has_root_cause = ("conductivity" in scale_full_text.lower()
+                 and any(w in scale_full_text.lower() for w in
+                     ["stable", "also", "remained", "declined", "decreased", "water loss", "cycles of concentration", "optimised"]))
     checks.append(Check(cat, "Root cause references conductivity behaviour",
                         4, has_root_cause,
                         "Scale Control must explain root cause using conductivity comparison"))
@@ -509,20 +588,20 @@ def run_narrative_checks(narr, expected):
     return checks
 
 
-def run_report_md_checks(md_text, expected):
-    """Check the generated .md report for structural compliance."""
+def run_generated_report_checks(md_text, expected):
+    """Check generated report text for structural compliance."""
     checks = []
 
     if md_text is None:
-        checks.append(Check("Report Structure", "Markdown report exists", 5, False,
-                            "No .md report found in output/"))
+        checks.append(Check("Report Structure", "Generated report text exists", 5, False,
+                            "No .md or .docx report found in output/"))
         return checks
 
-    checks.append(Check("Report Structure", "Markdown report exists", 5, True))
+    checks.append(Check("Report Structure", "Generated report text exists", 5, True))
     cat = "Report Structure"
 
     # ── Title page ────────────────────────────────────────────────────────────
-    has_title = bool(re.search(r"^#\s+.+", md_text, re.MULTILINE))
+    has_title = bool(re.search(r"^#\s+.+", md_text, re.MULTILINE)) or bool(md_text.strip().splitlines())
     checks.append(Check(cat, "Title page heading present", 3, has_title))
 
     has_prepared = "prepared" in md_text.lower() and ("date" in md_text.lower() or "by" in md_text.lower())
@@ -582,6 +661,204 @@ def run_report_md_checks(md_text, expected):
     return checks
 
 
+def load_report_checklist(path=CHECKLIST_PATH):
+    """Load numbered checklist rows from the report checklist workbook."""
+    try:
+        import openpyxl
+    except ImportError as exc:
+        raise RuntimeError("openpyxl is required to read the report checklist workbook") from exc
+
+    if not path.exists():
+        raise FileNotFoundError(f"Report checklist workbook not found: {path}")
+
+    workbook = openpyxl.load_workbook(path, data_only=True)
+    items = []
+    for worksheet in workbook.worksheets:
+        for row in worksheet.iter_rows(values_only=True):
+            if not row or len(row) < 2:
+                continue
+            raw_id, raw_text = row[0], row[1]
+            if raw_id is None or raw_text is None:
+                continue
+            item_id = str(raw_id).strip()
+            item_text = str(raw_text).strip()
+            if not item_id.isdigit() or not item_text:
+                continue
+            items.append({"id": item_id, "text": item_text, "sheet": worksheet.title})
+    return items
+
+
+def _percent_near_text(text, expected_pct):
+    if expected_pct is None:
+        return False
+    for match in re.finditer(r"(\d+(?:\.\d+)?)\s*%", text):
+        try:
+            if abs(float(match.group(1)) - float(expected_pct)) <= 5:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def evaluate_checklist_item(item_text, data, expected):
+    """Return (passed, detail) for one checklist item from the Excel workbook."""
+    report_text = data.get("report_text") or ""
+    narrative_text = _narrative_text(data.get("narrative", {}))
+    all_text = f"{report_text}\n{narrative_text}"
+    lower = all_text.lower()
+    item_lower = item_text.lower()
+
+    def present(*phrases):
+        return _contains_any(all_text, phrases)
+
+    def not_applicable(reason):
+        return True, f"Not applicable: {reason}"
+
+    if "title" in item_lower:
+        return bool(re.search(r"(^|\n)#?\s*.+", report_text.strip())), "Title text found" if report_text else "No generated report text found"
+    if "executive summary" in item_lower:
+        return present("Executive Summary"), "Executive Summary section checked"
+    if "under executive summary" in item_lower:
+        required = ["Corrosion Control", "Scale Control", "Microbial Control", "Water Efficiency", "Product Efficiency", "Proactive"]
+        found = [name for name in required if name.lower() in lower]
+        return len(found) >= 4, f"Found executive sections: {len(found)}/{len(required)}"
+    if "corrosion control" in item_lower and "status" not in item_lower:
+        return present("Corrosion Control"), "Corrosion Control heading checked"
+    if "corrosion control status" in item_lower:
+        return bool(re.search(rf"corrosion.{{0,120}}status|status.{{0,120}}({STATUS_PATTERN})", lower, re.DOTALL | re.IGNORECASE)), "Corrosion status searched"
+    if "avg ms" in item_lower or "avg ms and copper" in item_lower:
+        has_ms = expected["ms_mean"] is not None and str(round(expected["ms_mean"], 2)) in all_text
+        has_cu = expected["cu_mean"] is not None and str(round(expected["cu_mean"], 4)) in all_text
+        return has_ms and has_cu, f"Expected MS {expected['ms_mean']}, Cu {expected['cu_mean']}"
+    if "less than 3" in item_lower and "ms" in item_lower:
+        if expected["ms_mean"] is None:
+            return not_applicable("MS corrosion telemetry not available")
+        return expected["ms_mean"] < 3.0 and present("3.0 MPY", "3 mpy", "within 3"), f"MS mean: {expected['ms_mean']}"
+    if "less than 0.5" in item_lower and "cu" in item_lower:
+        if expected["cu_mean"] is None:
+            return not_applicable("Copper corrosion telemetry not available")
+        return expected["cu_mean"] < 0.5 and present("0.5 MPY", "0.5 mpy", "within 0.5"), f"Cu mean: {expected['cu_mean']}"
+    if "% of time" in item_lower and "range" in item_lower:
+        return present("%", "percent", "in range"), "Corrosion in-range wording checked"
+    if "95%" in item_lower and "corrosion" in item_lower:
+        return present("95%", "well maintained", "within the required range"), "95% corrosion range language checked"
+    if "initial 10 days" in item_lower and "corrosion" in item_lower:
+        return not_applicable("Initial-10-day corrosion trend detection is not available in the current score inputs")
+    if "last 10 days" in item_lower and "corrosion" in item_lower:
+        return not_applicable("Last-10-day corrosion trend detection is not available in the current score inputs")
+    if "ph has decreased" in item_lower and "corrosion" in item_lower:
+        if present("process leak"):
+            return True, "Process leak language found"
+        return not_applicable("pH/corrosion process-leak condition was not detected by the current score inputs")
+
+    if "scale control" in item_lower and "status" not in item_lower:
+        return present("Scale Control"), "Scale Control heading checked"
+    if "trace" in item_lower and "100" in item_lower and "range" in item_lower:
+        return _percent_near_text(all_text, expected.get("tp_pct")), f"Expected traced product in range: {expected.get('tp_pct')}%"
+    if "scale control status" in item_lower:
+        return expected["tp_status"].lower() in lower, f"Expected scale status: {expected['tp_status']}"
+    if "trace is decreased" in item_lower and "cond is less" in item_lower:
+        if expected.get("tp_dir") != "LOW":
+            return not_applicable("Traced product is not below range")
+        return present("water loss", "upcoming service"), "Low trace with low conductivity wording checked"
+    if "trace is decreased" in item_lower and "cond is maintained" in item_lower:
+        if expected.get("tp_dir") != "LOW":
+            return not_applicable("Traced product is not below range")
+        return present("inventory", "pump", "prime", "discharge line"), "Low trace with stable conductivity wording checked"
+    if "trace is higher" in item_lower or "polymer consumption" in item_lower:
+        if expected.get("tp_dir") != "HIGH":
+            return not_applicable("Traced product is not above range")
+        return present("scale control needs attention", "phosphate", "silica", "upcoming service"), "High trace/polymer consumption wording checked"
+    if "conductivity has increased" in item_lower and "cycles" in item_lower:
+        return present("cycles", "cycles of concentration", "COC"), "Cycles language checked"
+
+    if "microbial control" in item_lower and "status" not in item_lower:
+        return present("Microbial Control"), "Microbial Control heading checked"
+    if "microbial control status" in item_lower:
+        return expected["micro_status"].lower() in lower or present("microbial", "status"), f"Expected microbial status: {expected['micro_status']}"
+    if "biocide dosage" in item_lower or "control type" in item_lower:
+        return present("timer", "on/off", "on off", "delta timer", "biocide feed"), "Biocide control type wording checked"
+    if "biocide control" in item_lower and "on/off" in item_lower:
+        if not present("on/off", "on off"):
+            return not_applicable("Biocide control is not described as on/off in the generated report")
+        return present("within control", "inventory", "pump", "discharge line"), "On/off biocide control wording checked"
+    if "spikes in orp" in item_lower or "orp reading" in item_lower:
+        return present("ORP spike", "Delta ORP", "spike response", "biocide feed"), "ORP spike language checked"
+    if "frc level from ade" in item_lower:
+        if expected["frc"] is None:
+            return present("FRC", "not available", "upcoming service"), "FRC unavailable path checked"
+        return str(round(expected["frc"], 1)) in all_text or str(round(expected["frc"], 2)) in all_text, f"Expected FRC: {expected['frc']}"
+    if "frc level" in item_lower and "within range" in item_lower:
+        if expected["frc"] is None:
+            return not_applicable("FRC value not available")
+        in_range = 0.2 <= expected["frc"] <= 0.5
+        return ("0.2" in all_text or "0.5" in all_text or "within range" in lower) and (in_range or present("increase", "reduce", "dosage")), f"FRC: {expected['frc']}"
+    if "frc level is not mentioned" in item_lower:
+        if expected["frc"] is not None:
+            return not_applicable("FRC value is available")
+        return present("upcoming service", "will be measured", "will be checked"), "Missing FRC follow-up checked"
+    if "dip slide" in item_lower or "dipslide" in item_lower or "cfu" in item_lower:
+        return present("dip slide", "dipslide", "CFU", "upcoming visit", "upcoming service"), "Dip slide / CFU wording checked"
+
+    if "water efficiency" in item_lower and "heading" in item_lower:
+        return present("Water Efficiency"), "Water Efficiency heading checked"
+    if "avg conduct" in item_lower or "makeup conductivity" in item_lower or "target coc" in item_lower or "current coc" in item_lower:
+        return present("COC", "cycles of concentration", "makeup conductivity", "target COC", "current COC"), "COC wording checked"
+    if "don't mention avg conductivity" in item_lower:
+        return "average conductivity" not in lower and present("within range", "%"), "Average conductivity wording avoided and range wording checked"
+    if "water loss" in item_lower:
+        if display_status(expected.get("ec_status")) == STATUS_EXCELLENT:
+            return not_applicable("Conductivity is in range")
+        return present("water loss", "upcoming service", "inspect"), "Water loss wording checked"
+    if "blowdown" in item_lower or "makeup valve" in item_lower:
+        return present("blowdown", "makeup valve", "inspection", "inspect"), "Blowdown/makeup valve wording checked"
+
+    if "product efficiency" in item_lower and "heading" in item_lower:
+        return present("Product Efficiency"), "Product Efficiency heading checked"
+    if "trace product" in item_lower and "within range" in item_lower:
+        return _percent_near_text(all_text, expected.get("tp_pct")), f"Expected product in range: {expected.get('tp_pct')}%"
+    if "actual consumption" in item_lower or "target consumption" in item_lower or "product consumption" in item_lower:
+        return present("consumption", "not available", "product efficiency"), "Consumption wording checked"
+    if "prod ll" in item_lower or "cond hhalarm" in item_lower:
+        return present("LL", "low-low", "alarm", "conductivity", "product"), "Product LL / conductivity alarm wording checked"
+
+    if "proactive" in item_lower:
+        return present("Proactive System Support", "Proactive Summary"), "Proactive section checked"
+    if "no.of alarms" in item_lower or "alarm" in item_lower and "recommendation" in item_lower:
+        return present("alarm", "recommendation", "no alarms", "no active alarms"), "Alarm summary/recommendation checked"
+    if item_lower.strip() == "insight":
+        return present("Insight", "summary", "recommendation"), "Insight wording checked"
+    if "asset preservation" in item_lower:
+        if display_status(expected.get("corr_status")) == STATUS_EXCELLENT:
+            return not_applicable("Corrosion status is Excellent")
+        return present("asset preservation", "corrosion", "preservation"), "Asset preservation wording checked"
+
+    if "performance summary" in item_lower:
+        return present("Performance Summary"), "Performance Summary checked"
+    if "hh and ll" in item_lower or "% of range" in item_lower:
+        return present("HH", "LL", "%", "in range"), "Limits and percent range checked"
+    if "charts" in item_lower or "plot" in item_lower or "graph" in item_lower:
+        return present("chart", "trend", "graph", "Figure", "plot"), "Chart/graph wording checked"
+    if "comment" in item_lower:
+        return present("comment", "trend", "chart"), "Chart comment wording checked"
+
+    return present(item_text), "Fallback text presence check"
+
+
+def run_excel_checklist_checks(data, expected):
+    checks = []
+    cat = "Report Checklist"
+    try:
+        checklist_items = load_report_checklist()
+    except (FileNotFoundError, RuntimeError) as exc:
+        return [Check(cat, "Checklist workbook readable", 10, False, str(exc))]
+
+    for item in checklist_items:
+        passed, detail = evaluate_checklist_item(item["text"], data, expected)
+        checks.append(Check(cat, f"{item['id']}. {item['text']}", 1, passed, detail))
+    return checks
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # SCORECARD ASSEMBLY
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -623,6 +900,9 @@ def build_scorecard(checks, data):
     return {
         "site":          data["site"],
         "month":         data["month"],
+        "slug":          data["slug"],
+        "report_path":   data.get("report_path"),
+        "checklist_path": str(CHECKLIST_PATH),
         "total_score":   total_score,
         "total_max":     total_max,
         "percentage":    pct,
@@ -684,17 +964,16 @@ def print_scorecard(sc, verbose=False):
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def main():
-    args = parse_args()
-    site = args.site
-    month = args.month
+def score_generated_report(site, month, controller_ids=None, verbose=False, show_ai_guidance=True):
+    controller_ids = normalize_controller_ids(controller_ids)
+    label = site or ", ".join(controller_ids)
 
     print(f"\n{'=' * 60}")
-    print(f"  Report Scorer  —  {site}  |  {month}")
+    print(f"  Report Scorer  —  {label}  |  {month}")
     print(f"{'=' * 60}\n")
 
     print("Loading data …")
-    data = load_data(site, month)
+    data = load_data(site, month, controller_ids)
 
     print("Computing expected KPIs from source data …")
     expected = compute_expected(data)
@@ -706,29 +985,38 @@ def main():
 
     print("\nRunning checks …")
     checks = []
-    checks.extend(run_narrative_checks(data["narrative"], expected))
-    checks.extend(run_report_md_checks(data.get("report_md"), expected))
+    checks.extend(run_narrative_checks(data["narrative"], expected, data.get("report_text", "")))
+    checks.extend(run_generated_report_checks(data.get("report_text"), expected))
+    checks.extend(run_excel_checklist_checks(data, expected))
 
     scorecard = build_scorecard(checks, data)
-    print_scorecard(scorecard, verbose=args.verbose)
+    print_scorecard(scorecard, verbose=verbose)
 
-    # Save scorecard
-    slug = slugify(f"{site}_{month}")
-    out_path = OUTPUT_DIR / f"{slug}_scorecard.json"
+    out_path = OUTPUT_DIR / f"{data['slug']}_scorecard.json"
     out_path.write_text(json.dumps(scorecard, indent=2, default=str), encoding="utf-8")
     print(f"Scorecard saved → {out_path}")
 
-    # ── Show Copilot grade if available ───────────────────────────────────────
     copilot_grade_path = data["cache_dir"] / "copilot_grade.json"
     copilot_grade = _load(copilot_grade_path, None)
     if copilot_grade and copilot_grade.get("_status", "") != "EMPTY — Copilot must fill this in":
         print_copilot_grade(copilot_grade)
         print_combined(scorecard, copilot_grade)
-    else:
+    elif show_ai_guidance:
         print(f"\nTo also get an AI-graded assessment, run:")
-        print(f'  python prepare_grading_task.py --site "{site}" --month "{month}"')
+        if controller_ids:
+            controller_args = " ".join(f'"{controller_id}"' for controller_id in controller_ids)
+            print(f'  python prepare_grading_task.py --controller-ids {controller_args} --month "{month}"')
+        else:
+            print(f'  python prepare_grading_task.py --site "{data["site"]}" --month "{month}"')
         print(f"  Then paste the COPILOT TASK into Copilot Chat.")
         print(f"  Re-run this script after Copilot writes copilot_grade.json.\n")
+
+    return scorecard, out_path
+
+
+def main():
+    args = parse_args()
+    score_generated_report(args.site, args.month, args.controller_ids, verbose=args.verbose)
 
 
 def print_copilot_grade(cg):

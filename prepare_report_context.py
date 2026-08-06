@@ -21,33 +21,44 @@ import re
 import sys
 from pathlib import Path
 
+from src.report_cache import build_cache_slug, find_cache_by_controller_ids, normalize_controller_ids, slugify
+
 ROOT       = Path(__file__).parent
 DATA_STORE = ROOT / "data_store"
 
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--site",  required=True)
+    site_group = p.add_mutually_exclusive_group(required=True)
+    site_group.add_argument("--site")
+    site_group.add_argument("--controller-id", "--controller-ids", nargs="+", dest="controller_ids")
     p.add_argument("--month", required=True)
     return p.parse_args()
 
 
-def slugify(text):
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9]+", "_", text)
-    return text.strip("_")
-
-
 def main():
     args = parse_args()
-    site_name       = args.site
     reporting_month = args.month
+    requested_controller_ids = normalize_controller_ids(args.controller_ids)
 
-    cache_dir = DATA_STORE / slugify(f"{site_name}_{reporting_month}")
-    if not (cache_dir / "manifest.json").exists():
-        print(f"[ERROR] No prefetch data found at: {cache_dir}")
-        print(f"  Run first:  python prefetch_site.py --site \"{site_name}\" --month \"{reporting_month}\"")
+    try:
+        if requested_controller_ids:
+            cache_dir, manifest = find_cache_by_controller_ids(DATA_STORE, reporting_month, requested_controller_ids)
+        else:
+            cache_dir = DATA_STORE / build_cache_slug(args.site, reporting_month)
+            manifest = _load_json(cache_dir / "manifest.json", {})
+            if not manifest:
+                raise FileNotFoundError(f"No prefetch data found at: {cache_dir}")
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"[ERROR] {exc}")
+        if requested_controller_ids:
+            controller_args = " ".join(f'\"{controller_id}\"' for controller_id in requested_controller_ids)
+            print(f"  Run first:  python prefetch_site.py --controller-ids {controller_args} --month \"{reporting_month}\"")
+        else:
+            print(f"  Run first:  python prefetch_site.py --site \"{args.site}\" --month \"{reporting_month}\"")
         sys.exit(1)
+
+    site_name = manifest.get("site_name") or args.site
 
     print(f"Building REPORT_CONTEXT.md for {site_name} | {reporting_month} ...")
 
@@ -56,7 +67,7 @@ def main():
     service_notes = _load_json(cache_dir / "service_notes.json", [])
     ade_data      = _load_json(cache_dir / "ade_data.json",      [])
     scc_data      = _load_json(cache_dir / "scc.json",           [])
-    manifest      = _load_json(cache_dir / "manifest.json",      {})
+    manifest      = _load_json(cache_dir / "manifest.json",      manifest)
 
     telem_summaries = {}
     for f in sorted((cache_dir / "telemetry").glob("*_summary.json")):
@@ -312,9 +323,8 @@ def main():
     ]
 
     # ── Section 8: Copilot Task ───────────────────────────────────────────────
-    slug_site  = slugify(site_name)
-    slug_month = slugify(reporting_month)
-    cache_slug = slugify(site_name + "_" + reporting_month)
+    output_slug = cache_dir.name
+    cache_slug = cache_dir.name
     lines += [
         "## 8. Copilot Task — Paste this into Copilot Chat",
         "",
@@ -331,15 +341,16 @@ def main():
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"1.  SCC control range for Traced Product = SP minus DB to SP plus DB. What is it?",
         f"2.  Count how many recent_20 Traced Product readings fall inside that range. What %?",
-        f"3.  Is that % above 75% (Good), 25-75% (Stable), or below 25% (Action Required)?",
+        f"3.  Is that % above 75% (Excellent), 25-75% (Acceptable), or below 25% (Critical)?",
         f"4.  SCC control range for Conductivity. What is it?",
         f"5.  How many recent_20 Conductivity readings are inside that range?",
         f"6.  Did Conductivity move with Traced Product or stay stable?",
         f"7.  Root cause: if Conductivity was stable = product feed issue. If both dropped = water loss.",
         f"8.  Is FRC in Section 4 ADE data? Yes/No.",
-        f"9.  What does the biocide relay recent_20 show — was it firing?",
-        f"10. Are there Actions Completed in Section 5 service notes?",
-        f"11. For each sensor in Section 3, split recent_20 into 4 groups of 5 — these are the monthly trend.",
+        f"9.  Is dip-slide analysis or CFU recorded in Section 4 or Section 5? What value?",
+        f"10. What does the biocide relay recent_20 show — was it firing?",
+        f"11. Are there Actions Completed in Section 5 service notes?",
+        f"12. For each sensor in Section 3, split recent_20 into 4 groups of 5 — these are the monthly trend.",
         f"",
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"SECTION RULES — follow every rule exactly:",
@@ -356,7 +367,7 @@ def main():
         f"  Write ONLY about Traced Product (Fluorometer Ch1) in this section.",
         f"  DO NOT mention conductivity, pH, turbidity, or any other parameter here.",
         f"  Status MUST reflect the % in range from recent_20 — NOT the 90-day mean.",
-        f"  If % in range < 25% → status is ACTION REQUIRED — not Good, not Stable.",
+        f"  If % in range < 25% → status is CRITICAL — not Excellent, not Acceptable.",
         f"  If % in range = 0% → write: '[product] was never within the SCC programmed control range'",
         f"  Root cause (use conductivity from your self-check, but state it as root cause explanation):",
         f"    conductivity stable + traced product above range = product feed issue (pump/calibration)",
@@ -369,22 +380,35 @@ def main():
         f"    Observation: state the product level is above the SCC upper control limit.",
         f"    Recommendation: check dosing pump rate, verify fluorometer calibration,",
         f"    review dosing schedule, reduce feed rate if pump is operating correctly.",
+        f"  First line must state how much Traced Product was within the Controller Setpoint control range.",
+        f"  If trace was higher only in the initial days and later moved closer to the control band, mention that detail.",
+        f"  If end-of-month control is maintained well, highlight that product is now maintained well; otherwise state it is not yet consistently maintained well.",
+        f"  If end-of-month trace is higher than setpoint by up to 5%, do not write the exact deviation; mention that the deviation is minimal and the control logic will be optimised.",
+        f"  If end-of-month trace is higher than setpoint by more than 5%, mention the pump stroke will be reduced during the upcoming service visit.",
+        f"  If product control was good initially and later decreased, compare conductivity:",
+        f"    product decreased with conductivity decreased = water loss in the system;",
+        f"    product decreased while conductivity was maintained well = possible lack of inventory or dosing pump lost prime.",
+        f"  If conductivity was below its setpoint configuration range for most of the same period, state that water loss, dilution, or blowdown/makeup behavior should be inspected during the upcoming service visit.",
+        f"  If product control was good initially and later increased, state that feed control settings and fluorometer calibration should be reviewed during the upcoming service visit.",
         f"  Follow the narrative with a one-month trend chart of Traced Product only.",
         f"  Chart must be an ASCII line chart showing trend across the month.",
         f"  Add comment below chart.",
         f"",
         f"MICROBIAL CONTROL — STRICT RULES:",
-        f"  Write ONLY about FRC and ORP spike response in this section.",
+        f"  Write ONLY about FRC, ORP spike response, and dip-slide CFU analysis in this section.",
         f"  DO NOT mention pH, turbidity, cell fouling, or any other parameter here.",
         f"  Those parameters belong in the Performance Summary table only.",
         f"  FRC comment: use ONLY Section 4 ADE data. Never infer FRC from ORP.",
         f"  If FRC not in Section 4 write exactly:",
         f"    'FRC data was not available in the MDE data for this reporting period",
         f"    and will be checked during the upcoming service visit.'",
-        f"  ORP SPIKE COMMENT IS MANDATORY — always include:",
-        f"    'ORP spike response after timer-controlled biocide feed [was consistent /",
-        f"    was not consistent], indicating [the system responded to treatment /",
-        f"    microbial control should continue to be reviewed during the upcoming service visit].'",
+        f"  Dip-slide/CFU comment: if available in Section 4 or Section 5, mention the CFU value.",
+        f"    <10^2 CFU = excellent microbial control; 10^2 to <10^4 CFU = good microbial control;",
+        f"    10^4 to 10^6 CFU = needs attention; >10^6 CFU = critical and slug dosage duration needs to be increased.",
+        f"  If dip-slide analysis is not available, state it will be measured during the upcoming service visit.",
+        f"  ORP SPIKE COMMENT IS MANDATORY — if consistent, write exactly:",
+        f"    'ORP spike response after biocide feed was consistent, indicating the slug dosage of biocide is successful.'",
+        f"  If not consistent, state that microbial control should continue to be reviewed during the upcoming service visit.",
         f"  NEVER write absolute ORP values anywhere. Spike language only.",
         f"  Follow with a one-month ORP trend chart showing spike patterns across the month.",
         f"  Chart must be an ASCII line chart. Add comment below chart.",
@@ -406,10 +430,10 @@ def main():
         f"",
         f"STATUS LABELS:",
         f"  Every Health Check subsection MUST start with exactly one of:",
-        f"  **Status: Good** or **Status: Stable** or **Status: Action Required**",
-        f"  Good           = > 75% of recent_20 readings within SCC control range",
-        f"  Stable         = 25-75% of recent_20 readings within SCC control range",
-        f"  Action Required = < 25% of recent_20 readings within SCC control range",
+        f"  **Status: Excellent** or **Status: Acceptable** or **Status: Critical**",
+        f"  Excellent  = > 75% of recent_20 readings within SCC control range",
+        f"  Acceptable = 25-75% of recent_20 readings within SCC control range",
+        f"  Critical   = < 25% of recent_20 readings within SCC control range",
         f"",
         f"SCC DATA RULES:",
         f"  Use Section 2 SCC limits everywhere. Only use Section 6 if Section 2 is empty.",
@@ -467,11 +491,11 @@ def main():
         f"STEPS:",
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"STEP 1 — Write the full report into:",
-        f"  output/{slug_site}_{slug_month}_report.md",
+        f"  output/{output_slug}_report.md",
         f"",
         f"STEP 2 — Write a Node.js script at scripts/build_report.js using the docx npm",
         f"  package. Use Buckman green #00857C for headings and table headers.",
-        f"  Status colours: Good=green #00857C, Stable=amber #B8860B, Action Required=red #C00000.",
+        f"  Status colours: Excellent=green #00857C, Acceptable=amber #B8860B, Critical=red #C00000.",
         f"  Render every ASCII chart as a monospace code block in the Word doc",
         f"  using a Courier New paragraph with light grey background shading.",
         f"  Header every page: site name | report title.",
@@ -481,7 +505,7 @@ def main():
         f"  Use ShadingType.CLEAR not SOLID.",
         f"  Never use \n inside TextRun — use separate Paragraphs.",
         f"  Then run: node scripts/build_report.js",
-        f"  Save to:   output/{slug_site}_{slug_month}_report.docx",
+        f"  Save to:   output/{output_slug}_report.docx",
         "```",
         "",
     ]
@@ -491,13 +515,13 @@ def main():
 
     print(f"✅  REPORT_CONTEXT.md written → {out_path}")
     print(f"")
-    _create_output_stubs(ROOT, site_name, reporting_month)
+    _create_output_stubs(ROOT, site_name, reporting_month, output_slug)
     print(f"")
     print(f"Next steps:")
     print(f"  1. Open VS Code:         code .")
     print(f"  2. Open BOTH files in the editor:")
     print(f"       {out_path.relative_to(ROOT)}")
-    print(f"       output/{slugify(site_name)}_{slugify(reporting_month)}_report.md")
+    print(f"       output/{output_slug}_report.md")
     print(f"  3. Open Copilot Chat:    Ctrl+Shift+I")
     print(f"  4. Paste the task from Section 8 at the bottom of REPORT_CONTEXT.md")
 
@@ -521,12 +545,12 @@ def _strip_html(html: str) -> str:
 
 
 
-def _create_output_stubs(root, site_name, reporting_month):
+def _create_output_stubs(root, site_name, reporting_month, output_slug=None):
     """
     Create the empty output files and scripts folder so Copilot Agent
     can write to them directly without needing to create new files.
     """
-    slug = slugify(f"{site_name}_{reporting_month}")
+    slug = output_slug or build_cache_slug(site_name, reporting_month)
 
     # output folder + empty .md and .docx stubs
     out_dir = root / "output"

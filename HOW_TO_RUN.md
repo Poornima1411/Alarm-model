@@ -10,6 +10,12 @@
 pip install pandas pyodbc requests python-dotenv pyarrow
 ```
 
+For Word report generation and checklist scoring, also install:
+
+```
+pip install matplotlib numpy python-docx openpyxl
+```
+
 > You need **ODBC Driver 18 for SQL Server** installed on Windows.
 > Download from: https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server
 
@@ -28,6 +34,8 @@ Open `.env` and fill in:
 ```
 BUCKMAN_TOKEN=        ← paste your fresh bearer token here (see below)
 OBS_API_BASE=https://budig-bb-bbapiappa-01-p.azurewebsites.net/api/v1
+PBA_USERNAME=         ← optional service account username for telemetry login
+PBA_PASSWORD=         ← optional service account password for telemetry login
 SQL_SERVER=tcp:budig-bb-sqls-01-p.database.windows.net
 SQL_DATABASE=budig-bb-dbsql-01-p
 SQL_USERNAME=prod_db_support
@@ -53,6 +61,18 @@ SQL_PASSWORD=         ← fill in the password
 ```
 python prefetch_site.py --site "EXACT SITE NAME FROM DB" --month "Month YYYY"
 ```
+
+You can also run by controller ID instead of site name. Use one controller ID for a
+single-controller report, or pass multiple controller IDs from the same site to build
+one combined site report with multiple controller telemetry files:
+
+```
+python prefetch_site.py --controller-ids "84253F5EE1C9" --month "May 2026"
+python prefetch_site.py --controller-ids "84253F5EE1C9" "84253FAB8CC5" --month "May 2026"
+```
+
+When controller IDs are used, the script resolves the site name from SQL. All listed
+controller IDs must belong to the same site.
 
 **Examples:**
 ```
@@ -89,6 +109,12 @@ ORDER BY p.Name
 
 ```
 python prepare_report_context.py --site "EXACT SITE NAME" --month "Month YYYY"
+```
+
+If Step 1 used controller IDs, use the same controller IDs here:
+
+```
+python prepare_report_context.py --controller-ids "84253F5EE1C9" "84253FAB8CC5" --month "May 2026"
 ```
 
 **Examples:**
@@ -129,6 +155,37 @@ That file has all the KPIs, service notes, ADE data, and the task prompt for Cop
    ```
    output/flowserve_us_raleigh_nc_us_may_2026_report.md
    ```
+
+---
+
+### Step 4 — Generate Word report and automatic checklist score
+
+If `narrative_cache.json` has been created, run:
+
+```
+python generate_report.py --site "EXACT SITE NAME" --month "Month YYYY"
+```
+
+For a controller-ID cache, use the same controller IDs:
+
+```
+python generate_report.py --controller-ids "84253F5EE1C9" "84253FAB8CC5" --month "May 2026"
+```
+
+Every time `generate_report.py` creates the Word report, it now reads
+`Report Checklist/report checklist.xlsx`, checks each numbered checklist item
+one by one, and saves the scorecard to:
+
+```
+output/<slug>_scorecard.json
+```
+
+You can also run the checklist scorer separately:
+
+```
+python score_report.py --site "EXACT SITE NAME" --month "Month YYYY" --verbose
+python score_report.py --controller-ids "84253F5EE1C9" "84253FAB8CC5" --month "May 2026" --verbose
+```
 
 ---
 
@@ -203,6 +260,11 @@ python prepare_report_context.py --site "Flowserve US Raleigh NC (US)" --month "
 # → always overwrites REPORT_CONTEXT.md, reads from existing cache
 ```
 
+For a controller-ID cache:
+```
+python prepare_report_context.py --controller-ids "84253F5EE1C9" "84253FAB8CC5" --month "May 2026"
+```
+
 ---
 
 ## Troubleshooting
@@ -228,6 +290,7 @@ copy .env.example .env        # then fill in credentials
 # For each site + month:
 python prefetch_site.py         --site "Site Name" --month "May 2026"
 python prepare_report_context.py --site "Site Name" --month "May 2026"
+python generate_report.py       --site "Site Name" --month "May 2026"   # also writes scorecard
 
 # Then in VS Code:
 # Open data_store/<slug>/REPORT_CONTEXT.md

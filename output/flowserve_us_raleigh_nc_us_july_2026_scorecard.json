@@ -1,45 +1,37 @@
 {
-  "site": "Synthomer Chester SC (US)",
-  "month": "May 2026",
-  "slug": "synthomer_chester_sc_us_may_2026",
-  "report_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\output\\synthomer_chester_sc_us_may_2026_report.docx",
+  "site": "Flowserve US Raleigh NC (US)",
+  "month": "July 2026",
+  "slug": "flowserve_us_raleigh_nc_us_july_2026",
+  "report_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\output\\flowserve_us_raleigh_nc_us_july_2026_report_updated_20260806_011220.docx",
   "checklist_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\Report Checklist\\report checklist.xlsx",
-  "total_score": 205.0,
-  "total_max": 223,
-  "percentage": 91.9,
-  "grade": "A",
+  "total_score": 201.0,
+  "total_max": 225,
+  "percentage": 89.3,
+  "grade": "B",
   "failed_checks": [
-    {
-      "category": "Corrosion Control",
-      "check": "Status label present",
-      "max": 3,
-      "score": 0.0,
-      "passed": false,
-      "detail": ""
-    },
     {
       "category": "Scale Control",
       "check": "Status matches % in range",
       "max": 8,
       "score": 0.0,
       "passed": false,
-      "detail": "No status label found in scale narrative"
+      "detail": "Reported: Acceptable, Expected: Critical (0.0% in range)"
+    },
+    {
+      "category": "Scale Control",
+      "check": "'Never in range' stated when 0%",
+      "max": 6,
+      "score": 0.0,
+      "passed": false,
+      "detail": "MANDATORY when 0% in range \u2014 must state explicitly"
     },
     {
       "category": "Report Structure",
-      "check": "Prepared Date / Prepared By present",
-      "max": 3,
+      "check": "At least 1 chart included",
+      "max": 4,
       "score": 0.0,
       "passed": false,
-      "detail": ""
-    },
-    {
-      "category": "Report Structure",
-      "check": "Report Status field present",
-      "max": 2,
-      "score": 0.0,
-      "passed": false,
-      "detail": ""
+      "detail": "Chart-like patterns found: 0"
     },
     {
       "category": "Report Structure",
@@ -48,6 +40,38 @@
       "score": 0.0,
       "passed": false,
       "detail": ""
+    },
+    {
+      "category": "Report Checklist",
+      "check": "6. Calculate the  avg MS and copper corrosion values",
+      "max": 1,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Expected MS 1.1203, Cu 0.0282"
+    },
+    {
+      "category": "Report Checklist",
+      "check": "44. Mention whether trace product is 100% within range.",
+      "max": 1,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Expected traced product in range: 0.0%"
+    },
+    {
+      "category": "Report Checklist",
+      "check": "49. Mention the no.of alarms genertaed that month",
+      "max": 1,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Alarm summary/recommendation checked"
+    },
+    {
+      "category": "Report Checklist",
+      "check": "50. Mention the alarm and mention the recommendation for it",
+      "max": 1,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Alarm summary/recommendation checked"
     }
   ],
   "categories": {
@@ -75,9 +99,9 @@
       ]
     },
     "Corrosion Control": {
-      "score": 26.0,
+      "score": 29,
       "max": 29,
-      "pct": 89.7,
+      "pct": 100.0,
       "checks": [
         {
           "category": "Corrosion Control",
@@ -101,7 +125,7 @@
           "max": 5,
           "score": 5,
           "passed": true,
-          "detail": "Reported: 0.24, Expected: ~0.24"
+          "detail": "Reported: 1.1, Expected: ~1.12"
         },
         {
           "category": "Corrosion Control",
@@ -109,22 +133,22 @@
           "max": 5,
           "score": 5,
           "passed": true,
-          "detail": "Reported: 0.22, Expected: ~0.22"
+          "detail": "Reported: 0.025, Expected: ~0.0282"
         },
         {
           "category": "Corrosion Control",
           "check": "Status label present",
           "max": 3,
-          "score": 0.0,
-          "passed": false,
+          "score": 3,
+          "passed": true,
           "detail": ""
         }
       ]
     },
     "Scale Control": {
-      "score": 22.0,
-      "max": 30,
-      "pct": 73.3,
+      "score": 18.0,
+      "max": 32,
+      "pct": 56.2,
       "checks": [
         {
           "category": "Scale Control",
@@ -140,15 +164,15 @@
           "max": 8,
           "score": 0.0,
           "passed": false,
-          "detail": "No status label found in scale narrative"
+          "detail": "Reported: Acceptable, Expected: Critical (0.0% in range)"
         },
         {
           "category": "Scale Control",
-          "check": "Action Required language when <25%",
-          "max": 4,
-          "score": 4,
-          "passed": true,
-          "detail": ""
+          "check": "'Never in range' stated when 0%",
+          "max": 6,
+          "score": 0.0,
+          "passed": false,
+          "detail": "MANDATORY when 0% in range \u2014 must state explicitly"
         },
         {
           "category": "Scale Control",
@@ -285,9 +309,9 @@
       ]
     },
     "Report Structure": {
-      "score": 35.0,
+      "score": 36.0,
       "max": 42,
-      "pct": 83.3,
+      "pct": 85.7,
       "checks": [
         {
           "category": "Report Structure",
@@ -309,16 +333,16 @@
           "category": "Report Structure",
           "check": "Prepared Date / Prepared By present",
           "max": 3,
-          "score": 0.0,
-          "passed": false,
+          "score": 3,
+          "passed": true,
           "detail": ""
         },
         {
           "category": "Report Structure",
           "check": "Report Status field present",
           "max": 2,
-          "score": 0.0,
-          "passed": false,
+          "score": 2,
+          "passed": true,
           "detail": ""
         },
         {
@@ -389,8 +413,8 @@
           "category": "Report Structure",
           "check": "At least 1 chart included",
           "max": 4,
-          "score": 4,
-          "passed": true,
+          "score": 0.0,
+          "passed": false,
           "detail": "Chart-like patterns found: 0"
         },
         {
@@ -412,9 +436,9 @@
       ]
     },
     "Report Checklist": {
-      "score": 62,
+      "score": 58.0,
       "max": 62,
-      "pct": 100.0,
+      "pct": 93.5,
       "checks": [
         {
           "category": "Report Checklist",
@@ -460,9 +484,9 @@
           "category": "Report Checklist",
           "check": "6. Calculate the  avg MS and copper corrosion values",
           "max": 1,
-          "score": 1,
-          "passed": true,
-          "detail": "Expected MS 0.2415, Cu 0.22"
+          "score": 0.0,
+          "passed": false,
+          "detail": "Expected MS 1.1203, Cu 0.0282"
         },
         {
           "category": "Report Checklist",
@@ -470,7 +494,7 @@
           "max": 1,
           "score": 1,
           "passed": true,
-          "detail": "MS mean: 0.2415"
+          "detail": "MS mean: 1.1203"
         },
         {
           "category": "Report Checklist",
@@ -478,7 +502,7 @@
           "max": 1,
           "score": 1,
           "passed": true,
-          "detail": "Cu mean: 0.22"
+          "detail": "Cu mean: 0.0282"
         },
         {
           "category": "Report Checklist",
@@ -542,7 +566,7 @@
           "max": 1,
           "score": 1,
           "passed": true,
-          "detail": "Expected scale status: Action Required"
+          "detail": "Expected scale status: Critical"
         },
         {
           "category": "Report Checklist",
@@ -598,7 +622,7 @@
           "max": 1,
           "score": 1,
           "passed": true,
-          "detail": "Expected microbial status: Stable"
+          "detail": "Expected microbial status: Acceptable"
         },
         {
           "category": "Report Checklist",
@@ -764,9 +788,9 @@
           "category": "Report Checklist",
           "check": "44. Mention whether trace product is 100% within range.",
           "max": 1,
-          "score": 1,
-          "passed": true,
-          "detail": "Expected traced product in range: 10.0%"
+          "score": 0.0,
+          "passed": false,
+          "detail": "Expected traced product in range: 0.0%"
         },
         {
           "category": "Report Checklist",
@@ -804,16 +828,16 @@
           "category": "Report Checklist",
           "check": "49. Mention the no.of alarms genertaed that month",
           "max": 1,
-          "score": 1,
-          "passed": true,
+          "score": 0.0,
+          "passed": false,
           "detail": "Alarm summary/recommendation checked"
         },
         {
           "category": "Report Checklist",
           "check": "50. Mention the alarm and mention the recommendation for it",
           "max": 1,
-          "score": 1,
-          "passed": true,
+          "score": 0.0,
+          "passed": false,
           "detail": "Alarm summary/recommendation checked"
         },
         {
@@ -830,7 +854,7 @@
           "max": 1,
           "score": 1,
           "passed": true,
-          "detail": "Not applicable: Conductivity is in range"
+          "detail": "Water loss wording checked"
         },
         {
           "category": "Report Checklist",
@@ -838,7 +862,7 @@
           "max": 1,
           "score": 1,
           "passed": true,
-          "detail": "Not applicable: Corrosion status is Good"
+          "detail": "Not applicable: Corrosion status is Excellent"
         },
         {
           "category": "Report Checklist",

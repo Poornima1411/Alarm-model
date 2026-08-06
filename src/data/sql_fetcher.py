@@ -56,6 +56,45 @@ def fetch_site_controllers(site_name: str) -> pd.DataFrame:
         return pd.read_sql(sql, conn, params=vals)
 
 
+def fetch_controllers_by_serials(controller_ids: list[str]) -> pd.DataFrame:
+    controller_ids = [str(controller_id).strip() for controller_id in controller_ids if str(controller_id).strip()]
+    if not controller_ids:
+        return pd.DataFrame()
+
+    placeholders = ", ".join("?" for _ in controller_ids)
+    sql = f"""
+SELECT
+    d.SerialNumber,
+    CAST(d.Id AS NVARCHAR)  AS DeviceId,
+    d.DefaultConfigName     AS DeviceName,
+    p.Name                  AS SiteName,
+    p.Id                    AS PlantId,
+    comp.Name               AS SystemName,
+    ps.Name                 AS PlantSystemName
+FROM dbo.Device d
+INNER JOIN dbo.featureRollOutMapping fr
+    ON  fr.DeviceId         = d.Id
+    AND fr.FeatureRollOutId = 2
+LEFT JOIN dbo.Plant p
+    ON p.Id = d.PlantId
+LEFT JOIN dbo.Component comp
+    ON comp.Id = (
+        SELECT TOP 1 dc.ComponentId
+        FROM dbo.DeviceComponent dc
+        WHERE dc.DeviceId = d.Id
+    )
+LEFT JOIN dbo.PlantSystem ps
+    ON ps.Id = comp.PlantSystemId
+WHERE d.ApplicationID  = 1
+  AND d.Status         = 1
+  AND d.SerialNumber   IS NOT NULL
+  AND d.SerialNumber IN ({placeholders})
+ORDER BY d.SerialNumber;
+"""
+    with _get_connection() as conn:
+        return pd.read_sql(sql, conn, params=tuple(controller_ids))
+
+
 def fetch_service_notes(site_name: str, start_date: str, end_date: str) -> pd.DataFrame:
     raw_sql = _load_sql("get_service_notes.sql")
     sql, vals = _bind(raw_sql, {

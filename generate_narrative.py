@@ -32,6 +32,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 
+from src.report_status import STATUS_ACCEPTABLE, STATUS_EXCELLENT, status_from_limits, status_from_percent
+
+from src.report_cache import build_cache_slug, find_cache_by_controller_ids, normalize_controller_ids, slugify
+
 ROOT       = Path(__file__).parent
 DATA_STORE = ROOT / "data_store"
 load_dotenv(ROOT / ".env")
@@ -39,13 +43,11 @@ load_dotenv(ROOT / ".env")
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--site",  required=True)
+    site_group = p.add_mutually_exclusive_group(required=True)
+    site_group.add_argument("--site")
+    site_group.add_argument("--controller-id", "--controller-ids", nargs="+", dest="controller_ids")
     p.add_argument("--month", required=True)
     return p.parse_args()
-
-
-def slugify(t):
-    return re.sub(r"[^a-z0-9]+", "_", t.lower()).strip("_")
 
 
 def fmt(v, d=2):
@@ -57,9 +59,21 @@ def fmt(v, d=2):
 
 # ── Load prefetch data ────────────────────────────────────────────────────────
 
-def load_cache(site, month):
-    slug  = slugify(f"{site}_{month}")
-    cache = DATA_STORE / slug
+def load_cache(site, month, controller_ids=None):
+    controller_ids = normalize_controller_ids(controller_ids)
+    if controller_ids:
+        try:
+            cache, manifest = find_cache_by_controller_ids(DATA_STORE, month, controller_ids)
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            print(f"[ERROR] {exc}")
+            controller_args = " ".join(f'\"{controller_id}\"' for controller_id in controller_ids)
+            print(f"  Run: python prefetch_site.py --controller-ids {controller_args} --month \"{month}\"")
+            sys.exit(1)
+        site = manifest.get("site_name", site)
+        slug = cache.name
+    else:
+        slug  = build_cache_slug(site, month)
+        cache = DATA_STORE / slug
 
     if not (cache / "manifest.json").exists():
         print(f"[ERROR] No prefetch data at {cache}")
@@ -80,7 +94,7 @@ def load_cache(site, month):
         for name, stats in d.get("sensors", {}).items():
             sensors[name.lower()] = stats
 
-    return scc, ade, notes, sensors, slug, cache
+    return site, scc, ade, notes, sensors, slug, cache
 
 
 # ── Extract KPIs for the prompt ───────────────────────────────────────────────
@@ -146,14 +160,10 @@ def extract_kpis(scc, ade, sensors):
     k["tp_pct"] = pct(k["tp_r20"], k["tp_ll"], k["tp_ul"])
     k["ec_pct"] = pct(k["ec_r20"], k["ec_ll"], k["ec_ul"])
 
-    def status(p):
-        if p is None: return "Stable"
-        return "Good" if p > 75 else ("Stable" if p >= 25 else "Action Required")
-
     corr_ok = (k["ms_mean"] and k["ms_mean"] < 3.0) and (k["cu_mean"] and k["cu_mean"] < 0.5)
-    k["corr_status"] = "Good" if corr_ok else "Action Required"
-    k["tp_status"]   = status(k["tp_pct"])
-    k["ec_status"]   = status(k["ec_pct"])
+    k["corr_status"] = status_from_limits(bool(corr_ok))
+    k["tp_status"]   = status_from_percent(k["tp_pct"])
+    k["ec_status"]   = status_from_percent(k["ec_pct"])
 
     if k["tp_mean"] and k["tp_ul"] and k["tp_ll"]:
         k["tp_dir"] = "HIGH" if k["tp_mean"] > k["tp_ul"] else (
@@ -164,7 +174,7 @@ def extract_kpis(scc, ade, sensors):
     frc_rows = [r for r in ade if any(w in str(r.get("Parameter","")).lower()
                 for w in ("free residual","frc","halogen"))]
     k["frc"] = float(frc_rows[0]["Value"]) if frc_rows else None
-    k["micro_status"] = "Good" if k["frc"] and k["frc"] >= 0.2 else "Stable"
+    k["micro_status"] = STATUS_EXCELLENT if k["frc"] and k["frc"] >= 0.2 else STATUS_ACCEPTABLE
     k["relay_firing"] = bool(k["relay_r20"] and any(v > 0 for v in k["relay_r20"]))
 
     return k
@@ -180,15 +190,23 @@ CORROSION CONTROL:
 
 SCALE CONTROL:
 - Write ONLY about Traced Product. Do NOT mention conductivity, pH, turbidity, or any other parameter.
-- Status MUST reflect % in range: Good >75%, Stable 25-75%, Action Required <25%.
+- Status MUST reflect % in range: Excellent >75%, Acceptable 25-75%, Critical <25%.
+- Use only these customer-facing status labels: Excellent, Acceptable, Critical.
 - If product HIGH (above upper SCC limit): include Observation + Recommendation (check pump rate, verify fluorometer calibration, review dosing schedule).
 - If product LOW (below lower SCC limit): include Observation + Recommendation (check pump prime, verify inventory, inspect feed line, verify fluorometer calibration).
-- State root cause using conductivity: if conductivity stable = product feed issue; if both dropped = water loss.
+- First line must state how much Traced Product was within the Controller Setpoint control range.
+- If trace was higher only in the initial days and later moved closer to the control band, mention that detail. If end-of-month control is maintained well, highlight that product is now maintained well; otherwise state it is not yet consistently maintained well.
+- If end-of-month trace is higher than setpoint by up to 5%, do not write the exact deviation; mention that the deviation is minimal and the control logic will be optimised. If it is higher than setpoint by more than 5%, mention the pump stroke will be reduced during the upcoming service visit.
+- If product control was good initially and later decreased, use conductivity to explain the likely cause: product decreased with conductivity decreased = water loss in the system; product decreased while conductivity was maintained well = possible lack of inventory or dosing pump lost prime.
+- If conductivity was below its setpoint configuration range for most of the same period, state that water loss, dilution, or blowdown/makeup behavior should be inspected during the upcoming service visit.
+- If product control was good initially and later increased, state that feed control settings and fluorometer calibration should be reviewed during the upcoming service visit.
 
 MICROBIAL CONTROL:
-- Write ONLY about FRC and ORP. Do NOT mention pH, turbidity, or cell fouling.
+- Write ONLY about FRC, ORP, and dip-slide CFU analysis. Do NOT mention pH, turbidity, or cell fouling.
 - FRC from ADE data only. If missing: "FRC data was not available in the MDE data for this reporting period and will be checked during the upcoming service visit."
-- ORP spike comment is MANDATORY: "ORP spike response after timer-controlled biocide feed [was/was not] consistent, indicating [the system responded to treatment / microbial control should continue to be reviewed]."
+- If dip-slide analysis is available, mention the corresponding CFU result. Interpret CFU as: <10^2 = excellent microbial control; 10^2 to <10^4 = good microbial control; 10^4 to 10^6 = needs attention; >10^6 = critical and slug dosage duration needs to be increased.
+- If dip-slide analysis is not available, state that it will be measured during the upcoming service visit.
+- ORP spike comment is MANDATORY. If consistent, write: "ORP spike response after biocide feed was consistent, indicating the slug dosage of biocide is successful." If not consistent, state that microbial control should continue to be reviewed during the upcoming service visit.
 - NEVER write absolute ORP values.
 
 WATER EFFICIENCY:
@@ -327,13 +345,15 @@ def main():
     args  = parse_args()
     site  = args.site
     month = args.month
+    controller_ids = normalize_controller_ids(args.controller_ids)
 
     print(f"\n{'='*60}")
-    print(f"  Narrative Generator  —  {site}  |  {month}")
+    print(f"  Narrative Generator  —  Loading cache  |  {month}")
     print(f"{'='*60}\n")
 
     print("Step 1/3 — Loading prefetch cache …")
-    scc, ade, notes, sensors, slug, cache = load_cache(site, month)
+    site, scc, ade, notes, sensors, slug, cache = load_cache(site, month, controller_ids)
+    print(f"  Site: {site}")
     k = extract_kpis(scc, ade, sensors)
 
     print(f"  MS: {fmt(k['ms_mean'])} MPY  |  Cu: {fmt(k['cu_mean'],4)} MPY  → {k['corr_status']}")
@@ -365,7 +385,11 @@ def main():
     print(f"  ✓ Saved → {out_path}")
 
     print(f"\n✅  Narrative ready. Now run:")
-    print(f'    python generate_report.py --site "{site}" --month "{month}"\n')
+    if controller_ids:
+        controller_args = " ".join(f'"{controller_id}"' for controller_id in controller_ids)
+        print(f'    python generate_report.py --controller-ids {controller_args} --month "{month}"\n')
+    else:
+        print(f'    python generate_report.py --site "{site}" --month "{month}"\n')
 
 
 if __name__ == "__main__":

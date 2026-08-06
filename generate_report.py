@@ -28,6 +28,9 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
+from src.report_cache import build_cache_slug, find_cache_by_controller_ids, normalize_controller_ids
+from src.report_status import STATUS_ACCEPTABLE, STATUS_CRITICAL, STATUS_EXCELLENT, STATUS_PATTERN, display_status, status_from_limits, status_from_percent
+
 ROOT       = Path(__file__).parent
 DATA_STORE = ROOT / "data_store"
 OUTPUT_DIR = ROOT / "output"
@@ -44,9 +47,6 @@ GH="#00857C"; BH="#0077BB"; RH="#C00000"; YH="#E07000"
 # ══════════════════════════════════════════════════════════════════════════════
 # DATA LOADING
 # ══════════════════════════════════════════════════════════════════════════════
-
-def slugify(t): return re.sub(r"[^a-z0-9]+","_",t.lower()).strip("_")
-
 
 def _load_mu_conductivity(site):
     """Read MU conductivity from data/MU_conductivity.xlsx if present. Returns float or None."""
@@ -71,9 +71,21 @@ def _load_mu_conductivity(site):
     return None
 
 
-def load_all(site, month):
-    slug  = slugify(f"{site}_{month}")
-    cache = DATA_STORE / slug
+def load_all(site, month, controller_ids=None):
+    controller_ids = normalize_controller_ids(controller_ids)
+    if controller_ids:
+        try:
+            cache, manifest = find_cache_by_controller_ids(DATA_STORE, month, controller_ids)
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            print(f"[ERROR] {exc}")
+            controller_args = " ".join(f'\"{controller_id}\"' for controller_id in controller_ids)
+            print(f"  Run: python prefetch_site.py --controller-ids {controller_args} --month \"{month}\"")
+            sys.exit(1)
+        site = manifest.get("site_name", site)
+        slug = cache.name
+    else:
+        slug  = build_cache_slug(site, month)
+        cache = DATA_STORE / slug
 
     def jload(f, d):
         p = cache / f
@@ -94,6 +106,7 @@ def load_all(site, month):
     controllers = jload("controllers.json", [])
     scc         = jload("scc.json", [])
     ade         = jload("ade_data.json", [])
+    service_notes = jload("service_notes.json", [])
 
     # Load parquet — filter to reporting month only
     tel_dir = cache / "telemetry"
@@ -133,10 +146,221 @@ def load_all(site, month):
 
     print(f"  Parquet: {len(raw):,} total rows → {len(month_df):,} rows for {month}")
 
-    return narr, controllers, scc, ade, month_df, ts_col, slug
+    return site, narr, controllers, scc, ade, service_notes, month_df, ts_col, slug
 
 
-def compute_kpis(scc, ade, month_df, ts_col):
+def _parse_number(text):
+    if text is None:
+        return None
+    raw = str(text).strip().replace(",", "")
+    multiplier = 1.0
+    if "million" in raw.lower():
+        multiplier = 1_000_000.0
+    elif "thousand" in raw.lower():
+        multiplier = 1_000.0
+    sci = re.search(r"(\d+(?:\.\d+)?)\s*(?:x|×|\*)\s*10\s*(?:\^|\*\*)?\s*(\d+)", raw, re.I)
+    if sci:
+        return float(sci.group(1)) * (10 ** int(sci.group(2)))
+    match = re.search(r"\d+(?:\.\d+)?", raw)
+    return float(match.group(0)) * multiplier if match else None
+
+
+def _find_dipslide_cfu(ade, service_notes):
+    records = []
+    for row in ade:
+        text = " ".join(str(row.get(key, "")) for key in row)
+        if re.search(r"dip\s*slide|dipslide|cfu|colony", text, re.I):
+            value = _parse_number(row.get("Value")) or _parse_number(text)
+            if value is not None:
+                records.append(value)
+    for note in service_notes:
+        text = " ".join(str(note.get(key, "")) for key in note)
+        if re.search(r"dip\s*slide|dipslide|cfu|colony", text, re.I):
+            scoped = re.search(
+                r"(?:dip\s*slide|dipslide|cfu|colony)[^\n\r.;:]{0,80}",
+                text,
+                re.I,
+            )
+            value = _parse_number(scoped.group(0) if scoped else text)
+            if value is not None:
+                records.append(value)
+    return max(records) if records else None
+
+
+def _format_cfu(value):
+    if value is None:
+        return "N/A"
+    if value >= 10_000:
+        return f"{value:.1e} CFU/mL"
+    return f"{int(value):,} CFU/mL"
+
+
+def dipslide_comment(cfu):
+    if cfu is None:
+        return "Dip-slide analysis was not available for this reporting period and will be measured during the upcoming service visit."
+    cfu_text = _format_cfu(cfu)
+    if cfu < 100:
+        return f"Dip-slide analysis reported {cfu_text}, indicating excellent microbial control."
+    if cfu < 10_000:
+        return f"Dip-slide analysis reported {cfu_text}, indicating good microbial control."
+    if cfu <= 1_000_000:
+        return f"Dip-slide analysis reported {cfu_text}, indicating microbial control needs attention."
+    return f"Dip-slide analysis reported {cfu_text}, indicating critical microbial control; slug dosage duration needs to be increased."
+
+
+def _fmt_pct(value):
+    return f"{value:.1f}%" if value is not None else "N/A"
+
+
+def _trend_split(values, threshold=0.01):
+    if values is None or len(values) < 4:
+        return None, None, "unknown"
+    midpoint = len(values) // 2
+    early = float(values.iloc[:midpoint].mean())
+    late = float(values.iloc[midpoint:].mean())
+    if early == 0:
+        trend = "increased" if late > 0 else "stable"
+    elif late > early * (1 + threshold):
+        trend = "increased"
+    elif late < early * (1 - threshold):
+        trend = "decreased"
+    else:
+        trend = "stable"
+    return early, late, trend
+
+
+def _ade_residual_status(ade, trend_date):
+    if trend_date is None:
+        trend_date = pd.Timestamp.min
+    found = {"phosphate": False, "silica": False}
+    for row in ade:
+        parameter = str(row.get("Parameter", "")).lower()
+        value = row.get("Value")
+        if value in (None, "", "NULL"):
+            continue
+        row_date = pd.to_datetime(row.get("CreatedDateTime") or row.get("CreatedDate"), errors="coerce")
+        if pd.notna(row_date) and row_date < trend_date:
+            continue
+        if "phosphate" in parameter or "po4" in parameter or "ortho" in parameter:
+            found["phosphate"] = True
+        if "silica" in parameter or "sio2" in parameter:
+            found["silica"] = True
+    missing = [name for name, exists in found.items() if not exists]
+    if not missing:
+        return "ADE phosphate and silica residuals were entered on or after the date the increasing polymer consumption trend was noticed."
+    if len(missing) == 2:
+        return "ADE phosphate and silica residuals were not available on or after the date the increasing polymer consumption trend was noticed and will be measured during the upcoming service visit."
+    return f"ADE {missing[0]} residual was not available on or after the date the increasing polymer consumption trend was noticed and will be measured during the upcoming service visit."
+
+
+def _scale_control_comment(k, ade, month_df, ts_col):
+    trace_col = k.get("tp_col")
+    cond_col = k.get("ec_col")
+    target = k.get("tp_sp")
+    if not trace_col or trace_col not in month_df.columns or not target:
+        return ""
+
+    frame = month_df[[ts_col, trace_col] + ([cond_col] if cond_col and cond_col in month_df.columns else [])].copy()
+    frame[trace_col] = pd.to_numeric(frame[trace_col], errors="coerce")
+    if cond_col and cond_col in frame.columns:
+        frame[cond_col] = pd.to_numeric(frame[cond_col], errors="coerce")
+    frame = frame.dropna(subset=[ts_col, trace_col]).sort_values(ts_col)
+    frame = frame[frame[trace_col] > 0]
+    if len(frame) < 4:
+        return ""
+
+    trace = frame[trace_col]
+    trace_early, trace_late, trace_trend = _trend_split(trace)
+    in_range_pct = k.get("tp_pct")
+    higher_pct = round(float((trace > target).mean() * 100), 1)
+    chunk_size = max(len(trace) // 4, 1)
+    initial_trace = trace.iloc[:chunk_size]
+    final_trace = trace.iloc[-chunk_size:]
+
+    def pct(mask):
+        return round(float(mask.mean() * 100), 1) if len(mask) else 0.0
+
+    initial_in_range = pct((initial_trace >= k.get("tp_ll")) & (initial_trace <= k.get("tp_ul"))) if k.get("tp_ll") is not None and k.get("tp_ul") is not None else 0.0
+    final_in_range = pct((final_trace >= k.get("tp_ll")) & (final_trace <= k.get("tp_ul"))) if k.get("tp_ll") is not None and k.get("tp_ul") is not None else 0.0
+    initial_high = pct(initial_trace > k.get("tp_ul")) if k.get("tp_ul") is not None else 0.0
+    final_high = pct(final_trace > k.get("tp_ul")) if k.get("tp_ul") is not None else 0.0
+    final_low = pct(final_trace < k.get("tp_ll")) if k.get("tp_ll") is not None else 0.0
+    final_trace_mean = float(final_trace.mean()) if len(final_trace) else None
+    final_trace_above_setpoint_pct = ((final_trace_mean - target) / target * 100) if final_trace_mean is not None else None
+
+    cond_trend = "unknown"
+    cond_position = "unknown"
+    if cond_col and cond_col in frame.columns:
+        cond = frame[cond_col].dropna()
+        _, _, cond_trend = _trend_split(cond) if len(cond) >= 4 else (None, None, "unknown")
+        if k.get("ec_ll") is not None and len(cond):
+            cond_position = "low" if float(cond.mean()) < k["ec_ll"] else "in_range_or_above"
+        if k.get("ec_ll") is not None and k.get("ec_ul") is not None and len(cond):
+            cond_in_range_pct = float(((cond >= k["ec_ll"]) & (cond <= k["ec_ul"])).mean() * 100)
+            cond_chunk_size = max(len(cond) // 4, 1)
+            final_cond = cond.iloc[-cond_chunk_size:]
+            final_cond_in_range_pct = float(((final_cond >= k["ec_ll"]) & (final_cond <= k["ec_ul"])).mean() * 100)
+            if final_cond_in_range_pct >= 75 or cond_in_range_pct >= 75:
+                cond_position = "maintained_in_range"
+
+    notes = [
+        f"Traced Product was within the Controller Setpoint control range for {in_range_pct:.1f}% of the reporting month."
+        if in_range_pct is not None else
+        "Traced Product in-range performance could not be calculated for this reporting month."
+    ]
+
+    initial_high_later_maintained = initial_high >= 50 and final_in_range >= 75
+    initial_high_later_improved = initial_high >= 50 and final_in_range > initial_in_range and not initial_high_later_maintained
+    initial_good_later_changed = initial_in_range >= 75 and final_in_range < 75
+
+    if initial_high_later_maintained:
+        notes.append(
+            f"Traced Product was higher than target during the initial part of the month, but end-of-month control improved to {final_in_range:.1f}% within range, indicating product is now maintained well."
+        )
+    elif initial_high_later_improved:
+        notes.append(
+            f"The product was higher than target during the initial part of the month and moved closer to the control band later, but end-of-month control was {final_in_range:.1f}% within range, so it is not yet consistently maintained well."
+        )
+
+    if initial_good_later_changed:
+        if final_low >= 50 or trace_trend == "decreased":
+            if cond_position == "maintained_in_range":
+                notes.append("Product control was good initially and then decreased while conductivity was maintained well. This could be due to lack of inventory or the dosing pump losing prime, which will be inspected during the upcoming service visit.")
+            elif cond_position == "low" or cond_trend == "decreased":
+                notes.append("Product control was good initially and then decreased along with conductivity, indicating water loss in the system; this will be inspected during the upcoming service visit.")
+        elif final_high >= 50 or trace_trend == "increased":
+            notes.append("Product control was good initially and then increased later in the month, so the feed control settings and fluorometer calibration should be reviewed during the upcoming service visit.")
+
+    if final_trace_above_setpoint_pct is not None and final_trace_above_setpoint_pct > 0:
+        if final_trace_above_setpoint_pct <= 5:
+            notes.append(
+                "The end-of-month traced product deviation from setpoint is minimal, so the control logic will be optimised."
+            )
+        else:
+            notes.append(
+                f"End-of-month Traced Product was {final_trace_above_setpoint_pct:.1f}% higher than the setpoint, so the pump stroke will be reduced during the upcoming service visit."
+            )
+
+    if higher_pct >= 90:
+        polymer_rate = (trace - target) / trace
+        rate_early, rate_late, rate_trend = _trend_split(polymer_rate)
+        if rate_trend == "increased":
+            trend_date = frame.iloc[len(frame) // 2][ts_col]
+            notes.append(
+                f"Trace was higher than target for {higher_pct:.1f}% of the month. "
+                f"The calculated polymer consumption rate ((trace - target) / trace) increased from {_fmt_pct(rate_early * 100)} early in the month to {_fmt_pct(rate_late * 100)} later in the month, so scale control needs attention."
+            )
+            notes.append(_ade_residual_status(ade, trend_date))
+            if cond_trend == "increased":
+                notes.append("Conductivity and polymer consumption increased together, indicating the change is due to an increase in cycles of concentration.")
+
+    if cond_position == "low" or cond_trend == "decreased":
+        notes.append("Conductivity was below its setpoint configuration range for most of the same period, so water loss, dilution, or blowdown/makeup behavior should be inspected during the upcoming service visit.")
+
+    return " ".join(notes)
+
+
+def compute_kpis(scc, ade, service_notes, month_df, ts_col):
     """Extract KPIs from the monthly parquet slice."""
     k = {}
 
@@ -205,14 +429,11 @@ def compute_kpis(scc, ade, month_df, ts_col):
     k["tp_pct"] = pct_in_range(tp_col, k["tp_ll"], k["tp_ul"])
     k["ec_pct"] = pct_in_range(ec_col, k["ec_ll"], k["ec_ul"])
 
-    def status(p):
-        if p is None: return "Stable"
-        return "Good" if p>75 else ("Stable" if p>=25 else "Action Required")
-
     corr_ok = (k["ms_mean"] and k["ms_mean"]<3.0) and (k["cu_mean"] and k["cu_mean"]<0.5)
-    k["corr_status"] = "Good" if corr_ok else "Action Required"
-    k["tp_status"]   = status(k["tp_pct"])
-    k["ec_status"]   = status(k["ec_pct"])
+    k["corr_status"] = status_from_limits(bool(corr_ok))
+    k["tp_status"]   = status_from_percent(k["tp_pct"])
+    k["ec_status"]   = status_from_percent(k["ec_pct"])
+    k["scale_control_comment"] = _scale_control_comment(k, ade, month_df, ts_col)
 
     if k["tp_mean"] and k["tp_ul"] and k["tp_ll"]:
         k["tp_dir"] = "HIGH" if k["tp_mean"]>k["tp_ul"] else ("LOW" if k["tp_mean"]<k["tp_ll"] else "OK")
@@ -221,7 +442,9 @@ def compute_kpis(scc, ade, month_df, ts_col):
     frc_rows = [r for r in ade if any(w in str(r.get("Parameter","")).lower()
                 for w in ("free residual","frc","halogen"))]
     k["frc"] = float(frc_rows[0]["Value"]) if frc_rows else None
-    k["micro_status"] = "Good" if k["frc"] and k["frc"]>=0.2 else "Stable"
+    k["micro_status"] = STATUS_EXCELLENT if k["frc"] and k["frc"]>=0.2 else STATUS_ACCEPTABLE
+    k["dipslide_cfu"] = _find_dipslide_cfu(ade, service_notes)
+    k["dipslide_comment"] = dipslide_comment(k["dipslide_cfu"])
     k["relay_firing"] = rel_col is not None and series(rel_col).mean() > 0.01
 
     return k
@@ -236,9 +459,9 @@ def compute_coc(k, mu_cond):
     Deviation %  = abs(Actual - Target) / Target * 100
 
     Status thresholds (based on % deviation from target):
-      Good      : deviation <= 20%
-      Okay      : 20% < deviation <= 50%
-      Bad       : deviation > 50%
+    Excellent : deviation <= 20%
+    Acceptable: 20% < deviation <= 50%
+    Critical  : deviation > 50%
     """
     if mu_cond is None or mu_cond == 0:
         return {
@@ -252,9 +475,9 @@ def compute_coc(k, mu_cond):
 
     if target_coc and actual_coc:
         dev = abs(actual_coc - target_coc) / target_coc * 100
-        if   dev <= 20: coc_status = "Good"
-        elif dev <= 50: coc_status = "Okay"
-        else:           coc_status = "Bad"
+        if   dev <= 20: coc_status = STATUS_EXCELLENT
+        elif dev <= 50: coc_status = STATUS_ACCEPTABLE
+        else:           coc_status = STATUS_CRITICAL
     else:
         dev, coc_status = None, None
 
@@ -517,8 +740,8 @@ def add_para(doc, text="", size=10, bold=False, color=None, italic=False,
 def _strip_status(text):
     """Remove any 'Status: X.' or 'Status: X,' prefix from AI-generated text."""
     if not text: return text
-    # Remove patterns like "Status: Good." or "Status: Action Required." at the start
-    return re.sub(r"^\s*Status:\s*(Good|Stable|Action Required)[.,:]\s*",
+    # Remove patterns like "Status: Excellent." or legacy "Status: Action Required." at the start
+    return re.sub(rf"^\s*Status:\s*({STATUS_PATTERN})[.,:]\s*",
                   "", text, flags=re.IGNORECASE).strip()
 
 
@@ -550,11 +773,12 @@ def add_h3(doc, text):
 
 
 def add_status(doc, s):
-    c = GREEN if s=="Good" else (AMBER if s=="Stable" else RED)
+    label = display_status(s)
+    c = GREEN if label==STATUS_EXCELLENT else (AMBER if label==STATUS_ACCEPTABLE else RED)
     p = doc.add_paragraph()
     p.paragraph_format.space_before=Pt(3); p.paragraph_format.space_after=Pt(5)
     r1=p.add_run("Status: "); r1.font.size=Pt(10); r1.font.bold=True
-    r2=p.add_run(s);         r2.font.size=Pt(10); r2.font.bold=True; r2.font.color.rgb=c
+    r2=p.add_run(label);     r2.font.size=Pt(10); r2.font.bold=True; r2.font.color.rgb=c
 
 
 def add_img(doc, path, w=6.0, caption=None, fig_num=None):
@@ -616,14 +840,17 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
     fr=fp.add_run("Buckman Digital Water  |  Confidential")
     fr.font.size=Pt(8); fr.font.color.rgb=GREY
 
-    ctrl_id = controllers[0].get("SerialNumber","N/A") if controllers else "N/A"
+    ctrl_ids = [str(controller.get("SerialNumber", "")).strip() for controller in controllers]
+    ctrl_id = ", ".join(controller_id for controller_id in ctrl_ids if controller_id) or "N/A"
     today   = datetime.now().strftime("%d %B %Y")
     prod    = k["product_name"]
 
     def fmt(v, d=2):
         try: return f"{float(v):.{d}f}" if v not in (None,"NULL","") else "N/A"
         except: return "N/A"
-    def si(s): return "✓" if s=="Good" else ("⚠" if s=="Stable" else "✗")
+    def si(s):
+        label = display_status(s)
+        return "✓" if label==STATUS_EXCELLENT else ("⚠" if label==STATUS_ACCEPTABLE else "✗")
 
     # ── PAGE 1: TITLE ─────────────────────────────────────────────────────────
     add_para(doc,"BUCKMAN DIGITAL WATER",size=10,bold=True,color=GREY,
@@ -663,19 +890,23 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
     # ── Scale Control ─────────────────────────────────────────────────────────
     add_h3(doc,"Scale Control")
     add_status(doc, k["tp_status"])
-    add_para(doc, _strip_status(narr.get("scale_narrative","")))
+    if k.get("scale_control_comment"):
+        add_para(doc, k["scale_control_comment"])
+    else:
+        add_para(doc, _strip_status(narr.get("scale_narrative","")))
 
     # ── Microbial Control ─────────────────────────────────────────────────────
     add_h3(doc,"Microbial Control")
     add_status(doc, k["micro_status"])
     add_para(doc, _strip_status(narr.get("microbial_narrative","")))
+    add_para(doc, k.get("dipslide_comment", dipslide_comment(None)))
 
     # ── Water Efficiency ──────────────────────────────────────────────────────
     add_h2(doc,"Water Efficiency")
 
     if coc["mu_available"]:
-        cs = coc["coc_status"] or "N/A"
-        add_status(doc, cs if cs != "Okay" else "Stable")
+        cs = display_status(coc["coc_status"]) if coc["coc_status"] else "N/A"
+        add_status(doc, cs)
 
         add_table(doc,
             ["MU Conductivity","Target COC","Actual COC","Deviation","Status"],
@@ -696,6 +927,7 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
 
     # ── Product Efficiency ────────────────────────────────────────────────────
     add_h2(doc,"Product Efficiency")
+    add_status(doc, k["tp_status"])
     add_para(doc, _strip_status(narr.get("product_efficiency_narrative","")))
 
     # ── Proactive System Support ──────────────────────────────────────────────
@@ -783,6 +1015,11 @@ def _perf_rows(k, month_df):
         try: return f"{float(v):.{d}f}" if v not in (None,"NULL","") else "–"
         except: return "–"
 
+    def status_cell(status):
+        label = display_status(status)
+        icon = "✓" if label == STATUS_EXCELLENT else ("⚠" if label == STATUS_ACCEPTABLE else "✗")
+        return f"{icon} {label}"
+
     prod = k["product_name"]
 
     # Helper: get setpoint limits for a sensor from SCC data
@@ -817,21 +1054,21 @@ def _perf_rows(k, month_df):
         ["Corrosion – MS (MPY)", "ACM Skid",
          *col_stats(k["ms_col"]), "0.00", "3.00",
          pct_str(k["ms_col"], 0, 3.0),
-         f"✓ {k['corr_status']}"],
+         status_cell(k['corr_status'])],
         ["Corrosion – Cu (MPY)", "ACM Skid",
          *col_stats(k["cu_col"]), "0.00", "0.50",
          pct_str(k["cu_col"], 0, 0.5),
-         f"{'✓' if k['corr_status']=='Good' else '✗'} {k['corr_status']}"],
+         status_cell(k['corr_status'])],
         [f"{prod} (ppm)", "ACM Skid",
          *col_stats(k["tp_col"]),
          fmt(k["tp_ll"],1), fmt(k["tp_ul"],1),
          f"{k['tp_pct']}%" if k['tp_pct'] is not None else "–",
-         f"{'✓' if k['tp_status']=='Good' else '⚠'} {k['tp_status']}"],
+         status_cell(k['tp_status'])],
         ["Conductivity (µS/cm)", "ACM Skid",
          *col_stats(k["ec_col"]),
          fmt(k["ec_ll"],0), fmt(k["ec_ul"],0),
          f"{k['ec_pct']}%" if k['ec_pct'] is not None else "–",
-         f"{'✓' if k['ec_status']=='Good' else '⚠'} {k['ec_status']}"],
+         status_cell(k['ec_status'])],
         ["pH", "ACM Skid",
          *ph_stats, ph_ll, ph_ul, ph_pct, "ℹ Info"],
         ["ORP (mV)", "ACM Skid",
@@ -862,24 +1099,45 @@ def _fix(path):
     tmp.replace(path)
 
 
+def save_report_document(doc, slug):
+    candidates = [
+        OUTPUT_DIR / f"{slug}_report.docx",
+        OUTPUT_DIR / f"{slug}_report_updated.docx",
+        OUTPUT_DIR / f"{slug}_report_updated_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
+    ]
+    for index, path in enumerate(candidates):
+        try:
+            doc.save(str(path))
+            if index:
+                print(f"  Report file is locked; saving alternate copy -> {path}")
+            return path
+        except PermissionError:
+            continue
+    raise PermissionError("Could not save report because all output paths are locked.")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--site",  required=True)
+    site_group = p.add_mutually_exclusive_group(required=True)
+    site_group.add_argument("--site")
+    site_group.add_argument("--controller-id", "--controller-ids", nargs="+", dest="controller_ids")
     p.add_argument("--month", required=True)
     args = p.parse_args()
     site = args.site; month = args.month
+    controller_ids = normalize_controller_ids(args.controller_ids)
 
     print(f"\n{'='*60}")
-    print(f"  Report Generator  —  {site}  |  {month}")
+    print(f"  Report Generator  —  Loading cache  |  {month}")
     print(f"{'='*60}\n")
 
     print("Step 1/4 — Loading narrative cache and parquet telemetry …")
-    narr, controllers, scc, ade, month_df, ts_col, slug = load_all(site, month)
-    k = compute_kpis(scc, ade, month_df, ts_col)
+    site, narr, controllers, scc, ade, service_notes, month_df, ts_col, slug = load_all(site, month, controller_ids)
+    print(f"  Site: {site}")
+    k = compute_kpis(scc, ade, service_notes, month_df, ts_col)
 
     print(f"  MS: {k['ms_mean']} MPY  |  Cu: {k['cu_mean']} MPY  → {k['corr_status']}")
     print(f"  {k['product_name']}: {k['tp_mean']} ppm  ({k['tp_pct']}% in range → {k['tp_status']})")
@@ -908,11 +1166,23 @@ def main():
 
     print("\nStep 3/4 — Assembling Word document …")
     doc = build_docx(site, month, controllers, k, narr, charts, month_df, coc)
-    out = OUTPUT_DIR / f"{slug}_report.docx"
-    doc.save(str(out)); _fix(out)
+    out = save_report_document(doc, slug)
+    _fix(out)
 
     print(f"\n✅  Report ready → {out}")
     print(f"    Charts from full parquet: {len(month_df):,} rows for {month}\n")
+
+    print("Step 4/4 — Running report checklist scorecard …")
+    from score_report import score_generated_report
+    scorecard, scorecard_path = score_generated_report(
+        site,
+        month,
+        controller_ids=controller_ids,
+        verbose=False,
+        show_ai_guidance=False,
+    )
+    print(f"  Checklist score: {scorecard['percentage']}%  →  Grade {scorecard['grade']}")
+    print(f"  Scorecard ready → {scorecard_path}\n")
 
 
 if __name__ == "__main__":

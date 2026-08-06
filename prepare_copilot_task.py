@@ -2921,8 +2921,16 @@ def main():
         "**SCALE CONTROL:**",
         f"- Write ONLY about {prod}. Do NOT mention conductivity, pH, turbidity, or anything else.",
         f"- Status MUST be: {tp_status} (because {tp_pct}% of recent readings are in Controller Setpoint range)",
-        f"- {tp_pct}% in range means: Good>75%, Stable 25-75%, Action Required<25%",
+        f"- {tp_pct}% in range means: Excellent>75%, Acceptable 25-75%, Critical<25%",
         f"- Product is {tp_dir} (HIGH=above upper limit, LOW=below lower limit, OK=in range)",
+        f"- First line must state how much Traced Product was within the Controller Setpoint control range.",
+        f"- If trace was higher only in the initial days and later moved closer to the control band, mention that detail.",
+        f"- If end-of-month control is maintained well, highlight that product is now maintained well; otherwise state it is not yet consistently maintained well.",
+        f"- If end-of-month trace is higher than setpoint by up to 5%, do not write the exact deviation; mention that the deviation is minimal and the control logic will be optimised.",
+        f"- If end-of-month trace is higher than setpoint by more than 5%, mention the pump stroke will be reduced during the upcoming service visit.",
+        f"- If product control was good initially and later decreased, compare conductivity: product decreased with conductivity decreased = water loss in the system; product decreased while conductivity was maintained well = possible lack of inventory or dosing pump lost prime.",
+        f"- If conductivity was below its setpoint configuration range for most of the same period, state that water loss, dilution, or blowdown/makeup behavior should be inspected during the upcoming service visit.",
+        f"- If product control was good initially and later increased, state that feed control settings and fluorometer calibration should be reviewed during the upcoming service visit.",
     ]
 
     if tp_dir == "HIGH":
@@ -2964,8 +2972,7 @@ def main():
 
     task_lines += [
         f"- Biocide relay was triggered: {relay_triggered}",
-        f"- MANDATORY ORP sentence: 'ORP spike response after timer-controlled biocide feed "
-        f"{'was consistent, indicating the system responded to treatment.' if relay_triggered else 'was not consistent. Possible causes include low oxidizing biocide residual, biocide inventory issue, dosing pump lost prime, or incorrect timer schedule. These will be investigated at the upcoming service visit.'}'",
+        f"- MANDATORY ORP sentence: '{'ORP spike response after biocide feed was consistent, indicating the slug dosage of biocide is successful.' if relay_triggered else 'ORP spike response after biocide feed was not consistent. Possible causes include low oxidizing biocide residual, biocide inventory issue, dosing pump lost prime, or incorrect timer schedule. These will be investigated at the upcoming service visit.'}'",
         "- NEVER write absolute ORP values in the microbial_narrative or orp_chart_comment",
         "  fields (or any other narrative text). Relative/spike language only in narrative prose.",
         "- EXCEPTION — this restriction does NOT apply to the Performance Summary table on",

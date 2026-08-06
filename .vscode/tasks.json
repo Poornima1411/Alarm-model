@@ -1,0 +1,115 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "prefetch-flowserve-july-2026",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe",
+			"args": [
+				"prefetch_site.py",
+				"--site",
+				"Flowserve US Raleigh NC (US)",
+				"--month",
+				"July 2026"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "check-env-files",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"$ErrorActionPreference='Stop'; @('.env','__pycache__\\.env') | ForEach-Object { if (Test-Path $_) { Write-Output \"$($_): exists\" } else { Write-Output \"$($_): missing\" } }"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "check-env-files-2",
+			"type": "shell",
+			"command": "if (Test-Path .env) { Write-Output 'root .env exists' } else { Write-Output 'root .env missing' }; if (Test-Path __pycache__\\.env) { Write-Output '__pycache__ .env exists' } else { Write-Output '__pycache__ .env missing' }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "copy-env-to-root",
+			"type": "shell",
+			"command": "Copy-Item -LiteralPath __pycache__\\.env -Destination .env -Force; if (Test-Path .env) { Write-Output 'root .env ready' }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "prefetch-flowserve-july-2026-run2",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe prefetch_site.py --site 'Flowserve US Raleigh NC (US)' --month 'July 2026'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "prefetch-flowserve-july-2026-run3",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe prefetch_site.py --site 'Flowserve US Raleigh NC (US)' --month 'July 2026'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "prepare-context-flowserve-july-2026",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe prepare_report_context.py --site 'Flowserve US Raleigh NC (US)' --month 'July 2026'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "generate-narrative-flowserve-july-2026",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe generate_narrative.py --site 'Flowserve US Raleigh NC (US)' --month 'July 2026'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "generate-report-flowserve-july-2026",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe generate_report.py --site 'Flowserve US Raleigh NC (US)' --month 'July 2026'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "generate-report-flowserve-july-2026-final",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe generate_report.py --site 'Flowserve US Raleigh NC (US)' --month 'July 2026'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "regenerate-flowserve-july-new-status-labels",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe generate_report.py --site 'Flowserve US Raleigh NC (US)' --month 'July 2026'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "regenerate-flowserve-july-new-status-labels-2",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe generate_report.py --site 'Flowserve US Raleigh NC (US)' --month 'July 2026'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "inspect-updated-status-labels",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe -c \"from docx import Document; import re; p='output/flowserve_us_raleigh_nc_us_july_2026_report_updated.docx'; text='\\n'.join(x.text for x in Document(p).paragraphs); print('\\n'.join(re.findall(r'Status:\\s*(Excellent|Acceptable|Critical|Good|Stable|Action Required)', text)))\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "inspect-updated-status-labels-2",
+			"type": "shell",
+			"command": "$code = @'\nfrom docx import Document\nimport re\npath = 'output/flowserve_us_raleigh_nc_us_july_2026_report_updated.docx'\ntext = '\\n'.join(paragraph.text for paragraph in Document(path).paragraphs)\nfor match in re.findall(r'Status:\\s*(Excellent|Acceptable|Critical|Good|Stable|Action Required)', text):\n    print(match)\n'@; .\\.venv\\Scripts\\python.exe -c $code",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

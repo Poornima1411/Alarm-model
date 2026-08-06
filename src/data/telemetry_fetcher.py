@@ -2,7 +2,7 @@
 src/data/telemetry_fetcher.py
 ──────────────────────────────
 Fetches telemetry from the Buckman ACM API.
-Uses env vars: BUCKMAN_TOKEN (user bearer token), OBS_API_BASE
+Uses env vars: PBA_USERNAME/PBA_PASSWORD or BUCKMAN_TOKEN, OBS_API_BASE
 """
 
 import io
@@ -20,9 +20,10 @@ load_dotenv()
 BASE_URL = os.environ.get("OBS_API_BASE",
     "https://budig-bb-bbapiappa-01-p.azurewebsites.net/api/v1")
 
-# PBA service account — used for telemetry export (same creds as original script)
-_PBA_USERNAME = "PBAckconnector@buckman.com"
-_PBA_PASSWORD = '4-*fvbsHu-6A"11oILa6'
+# PBA service account credentials are optional. If they are not provided,
+# telemetry fetching falls back to BUCKMAN_TOKEN from the local .env file.
+_PBA_USERNAME = os.environ.get("PBA_USERNAME")
+_PBA_PASSWORD = os.environ.get("PBA_PASSWORD")
 
 TELEMETRY_TAGS: List[str] = [
     "envision_fluorometer_cellfouling",
@@ -72,6 +73,9 @@ TELEMETRY_TAGS: List[str] = [
 
 def get_bearer_token() -> Optional[str]:
     """Login with PBA service account and return bearer token."""
+    if not (_PBA_USERNAME and _PBA_PASSWORD):
+        return os.environ.get("BUCKMAN_TOKEN") or None
+
     url = f"{BASE_URL}/Login"
     resp = requests.post(
         url,

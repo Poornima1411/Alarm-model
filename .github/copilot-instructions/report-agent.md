@@ -71,9 +71,9 @@ Section 3 gives you per-sensor statistics over the 90-day telemetry period:
 4. This is the % in range used everywhere in the report
 
 **Status thresholds — apply these exactly:**
-- **Good** — more than 75% of recent_20 readings are within Controller Setpoint control range
-- **Stable** — 25% to 75% of recent_20 readings are within Controller Setpoint control range
-- **Action Required** — fewer than 25% of recent_20 readings are within Controller Setpoint control range
+- **Excellent** — more than 75% of recent_20 readings are within Controller Setpoint control range
+- **Acceptable** — 25% to 75% of recent_20 readings are within Controller Setpoint control range
+- **Critical** — fewer than 25% of recent_20 readings are within Controller Setpoint control range
 
 **NEVER IN CONTROL RULE:**
 If 0 out of 20 recent readings are within the Controller Setpoint control range, you MUST write:
@@ -138,7 +138,7 @@ Pages 2 and 3 must contain ONLY the four sections below as narrative prose parag
 No KPI tiles. No summary boxes. Plain paragraphs matching the style of the training reports.
 
 Each subsection of System Health Check must begin with a bold status label on its own line:
-`**Status:** Good` or `**Status:** Stable` or `**Status:** Action Required`
+`**Status:** Excellent` or `**Status:** Acceptable` or `**Status:** Critical`
 
 ---
 
@@ -147,16 +147,16 @@ Each subsection of System Health Check must begin with a bold status label on it
 **Status determination:**
 - Check MS corrosion mean against 3.0 MPY limit
 - Check Cu corrosion mean against 0.5 MPY limit
-- If both are within limits → Good
-- If either is approaching the limit (within 20%) → Stable
-- If either exceeds the limit → Action Required
+- If both are within limits → Excellent
+- If either is approaching the limit (within 20%) → Acceptable
+- If either exceeds the limit → Critical
 
 **Exact wording format — use this precisely:**
 
 ```
-**Status:** {Good / Stable / Action Required}
+**Status:** {Excellent / Acceptable / Critical}
 
-The corrosion control trend for the month was {good / stable / requiring attention}.
+The corrosion control trend for the month was {excellent / acceptable / critical}.
 The average mild steel corrosion rate was {MS mean from Section 3} MPY against the
 target of within 3.0 MPY, and the average copper corrosion rate was {Cu mean from
 Section 3} MPY against the target of within 0.5 MPY.
@@ -175,11 +175,11 @@ mild steel and 0.5 MPY for copper are applied."}
 
 **Status determination:**
 Calculate % in range for traced product (Fluorometer Ch1) using recent_20 vs Controller Setpoint SP±DB.
-Apply the status thresholds (Good > 75%, Stable 25–75%, Action Required < 25%).
+Apply the status thresholds (Excellent > 75%, Acceptable 25–75%, Critical < 25%).
 
 > **IMPORTANT — Status must reflect the actual % in range, not the average value.**
-> If recent_20 shows only 10% in range → Status is Action Required, not Good or Stable.
-> Never mark Scale Control as Good or Stable if fewer than 25% of readings are in range.
+> If recent_20 shows only 10% in range → Status is Critical, not Excellent or Acceptable.
+> Never mark Scale Control as Excellent or Acceptable if fewer than 25% of readings are in range.
 
 **Root cause logic — always apply this:**
 - Traced product above Controller Setpoint range AND conductivity stable → **product feed issue**
@@ -188,6 +188,14 @@ Apply the status thresholds (Good > 75%, Stable 25–75%, Action Required < 25%)
   (excess blowdown, makeup water ingress, or system water turnover)
 - Traced product below Controller Setpoint range AND conductivity stable → **product feed issue**
   (pump lost prime, empty inventory, or blocked feed line)
+- The first Scale Control line must state how much Traced Product was within the Controller Setpoint control range.
+- If trace was higher only in the initial days and later moved closer to the control band, mention that detail.
+- If end-of-month control is maintained well, highlight that product is now maintained well; otherwise state it is not yet consistently maintained well.
+- If end-of-month trace is higher than setpoint by up to 5%, do not write the exact deviation; mention that the deviation is minimal and the control logic will be optimised.
+- If end-of-month trace is higher than setpoint by more than 5%, mention the pump stroke will be reduced during the upcoming service visit.
+- If product control was good initially and later decreased, compare conductivity: product decreased with conductivity decreased means water loss in the system; product decreased while conductivity was maintained well means possible lack of inventory or dosing pump lost prime.
+- If conductivity was below its setpoint configuration range for most of the same period, state that water loss, dilution, or blowdown/makeup behavior should be inspected during the upcoming service visit.
+- If product control was good initially and later increased, state that feed control settings and fluorometer calibration should be reviewed during the upcoming service visit.
 
 **If Traced Product is LOW (below Controller Setpoint lower limit) — mandatory observation and recommendation:**
 - Observation: state that the traced product concentration was below the Controller Setpoint lower control limit.
@@ -204,9 +212,9 @@ Apply the status thresholds (Good > 75%, Stable 25–75%, Action Required < 25%)
 **Exact wording format:**
 
 ```
-**Status:** {Good / Stable / Action Required}
+**Status:** {Excellent / Acceptable / Critical}
 
-The traced product control trend for the month was {good / stable / requiring attention}.
+The traced product control trend for the month was {excellent / acceptable / critical}.
 The traced product was maintained within the Controller Setpoint target control range of {SP−DB}–{SP+DB} ppm
 for {%} of recent readings.
 {If % < 25%: "This is below the acceptable threshold and requires action."}
@@ -239,12 +247,21 @@ Show the Controller Setpoint upper and lower limits as reference lines. Add Comm
 
 ### Microbial Control
 
-> **Write ONLY about FRC and ORP in this section.**
+> **Write ONLY about FRC, ORP, and dip-slide CFU analysis in this section.**
 > **DO NOT mention pH, turbidity, cell fouling, or any other parameter here.**
 > pH, turbidity, and cell fouling belong in the Performance Summary table only.
 
 FRC must come ONLY from Section 4 ADE data. Never infer FRC from ORP telemetry.
 Never state absolute ORP values anywhere. Only use ORP spike / Delta ORP response language.
+
+If dip-slide analysis or CFU is available in Section 4 ADE data or Section 5 service notes,
+mention the corresponding CFU result and interpret it as follows:
+- **<10^2 CFU** — excellent microbial control
+- **10^2 to <10^4 CFU** — good microbial control
+- **10^4 to 10^6 CFU** — needs attention
+- **>10^6 CFU** — critical microbial control; slug dosage duration needs to be increased
+
+If dip-slide analysis is not available, state that it will be measured during the upcoming service visit.
 
 **ORP comment is MANDATORY in every report — always include it.**
 Look at the relay data in Section 3 for the biocide relay (e.g. relay3, relay5).
@@ -254,7 +271,7 @@ should be present after each dosing event.
 **Exact wording format:**
 
 ```
-**Status:** {Good / Stable / Action Required}
+**Status:** {Excellent / Acceptable / Critical}
 
 {If FRC available in Section 4:}
 FRC from the field test data was {value} ppm, indicating {interpretation — adequate residual /
@@ -264,9 +281,21 @@ residual below recommended level}.
 FRC data was not available in the field test data for this reporting period and will be checked
 during the upcoming service visit.
 
-ORP spike response after timer-controlled biocide feed {was consistent, indicating the system
-responded to treatment / was not consistent, suggesting the probe may require inspection or
-the biocide feed schedule should be reviewed during the upcoming service visit}.
+{If dip-slide analysis/CFU available in Section 4 or Section 5:}
+Dip-slide analysis reported {CFU value}, indicating {excellent microbial control / good microbial
+control / microbial control needs attention / critical microbial control; slug dosage duration
+needs to be increased}.
+
+{If dip-slide analysis/CFU not available:}
+Dip-slide analysis was not available for this reporting period and will be measured during the
+upcoming service visit.
+
+{If ORP spike response was consistent:}
+ORP spike response after biocide feed was consistent, indicating the slug dosage of biocide is successful.
+
+{If ORP spike response was not consistent:}
+ORP spike response after biocide feed was not consistent, suggesting the probe may require inspection or
+the biocide feed schedule should be reviewed during the upcoming service visit.
 
 {If no ORP spikes observed:}
 Possible causes include low oxidizing biocide residual, biocide inventory issue, dosing pump
@@ -463,7 +492,7 @@ Before writing a single word of the report, check these against REPORT_CONTEXT.m
 
 1. What is the Controller Setpoint control range for traced product? (SP−DB to SP+DB)
 2. How many of the recent_20 traced product readings fall within that range?
-3. What % is that? Is it Good (>75%), Stable (25–75%), or Action Required (<25%)?
+3. What % is that? Is it Excellent (>75%), Acceptable (25–75%), or Critical (<25%)?
 4. What is the Controller Setpoint control range for conductivity?
 5. How many of the recent_20 conductivity readings fall within that range?
 6. Did conductivity move in the same direction as traced product, or did it stay stable?
@@ -490,7 +519,7 @@ After writing the report, verify every item below and output the checklist:
 - [ ] Corrosion Control states: "average mild steel corrosion rate was X MPY against the target of within 3.0 MPY"
 - [ ] Corrosion Control states: "average copper corrosion rate was X MPY against the target of within 0.5 MPY"
 - [ ] Scale Control has Status label
-- [ ] Scale Control status correctly reflects % in range (Action Required if < 25%)
+- [ ] Scale Control status correctly reflects % in range (Critical if < 25%)
 - [ ] Scale Control states % time in Controller Setpoint control range using recent_20
 - [ ] Scale Control explains root cause using conductivity behaviour
 - [ ] Scale Control states "never within range" explicitly if 0 of 20 readings in range
@@ -501,7 +530,7 @@ After writing the report, verify every item below and output the checklist:
 - [ ] No absolute ORP values appear anywhere in the report
 - [ ] Water Efficiency section present with conductivity and COC discussion
 - [ ] Product Efficiency uses Product Name from Controller Setpoint Section 2 (not generic "inhibitor" or "biocide")
-- [ ] Product Efficiency status correctly reflects % in range (Action Required if < 25%)
+- [ ] Product Efficiency status correctly reflects % in range (Critical if < 25%)
 - [ ] Product Efficiency states root cause if traced product outside Controller Setpoint range
 - [ ] Proactive System Support section present (not titled "Alarms")
 - [ ] Service note Actions Completed incorporated if available in Section 5
@@ -522,7 +551,7 @@ After writing the report, verify every item below and output the checklist:
 2. **At least 1 chart is mandatory**
 3. **Never mention absolute ORP values** — only ORP spike / Delta ORP response language
 4. **FRC must come from Section 4 ADE data only** — never inferred from ORP
-5. **Scale Control status must reflect % in range** — never call it Good if < 25% in range
+5. **Scale Control status must reflect % in range** — never call it Excellent if < 25% in range
 6. **Always include ORP spike comment in Microbial Control** — mandatory even if relay data is limited
 7. **Scale Control covers Traced Product ONLY** — no conductivity, pH, or other parameters in this section
 8. **Microbial Control covers FRC and ORP ONLY** — no pH, turbidity, or cell fouling in this section
@@ -555,9 +584,9 @@ The script must produce a Word document that matches the report content exactly:
 - Footer on every page: "Buckman Digital Water | Confidential" left, page number right
 - Page 1: site name large in green, report title, metadata label/value pairs
 - Pages 2–3: Executive Summary narrative prose with inline coloured Status labels:
-  - Good → green text `#00857C`
-  - Stable → amber text `#B8860B`
-  - Action Required → red text `#C00000`
+  - Excellent → green text `#00857C`
+  - Acceptable → amber text `#B8860B`
+  - Critical → red text `#C00000`
 - Page 4: Performance Summary as a full-width table, green header row, alternating shading
 - Pages 5+: Chart tables with green header rows, bold Comment text below each
 

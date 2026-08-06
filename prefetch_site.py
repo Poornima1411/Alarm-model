@@ -32,6 +32,8 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from src.report_cache import build_cache_slug, normalize_controller_ids
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-7s  %(message)s",
@@ -50,8 +52,12 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Pre-fetch all report data for one site + month."
     )
-    p.add_argument("--site",  required=True,
-                   help='Site name exactly as in the DB e.g. "Flowserve US Raleigh NC (US)"')
+    site_group = p.add_mutually_exclusive_group(required=True)
+    site_group.add_argument("--site",
+                            help='Site name exactly as in the DB e.g. "Flowserve US Raleigh NC (US)"')
+    site_group.add_argument("--controller-id", "--controller-ids",
+                            nargs="+", dest="controller_ids",
+                            help="One or more controller serial numbers to include in one report")
     p.add_argument("--month", required=True,
                    help='Reporting month e.g. "May 2026"')
     p.add_argument("--days",  type=int, default=None,
@@ -65,11 +71,49 @@ def parse_args():
 
 def main():
     args = parse_args()
-    site_name       = args.site
     reporting_month = args.month
+    requested_controller_ids = normalize_controller_ids(args.controller_ids)
 
     start_date, end_date = _month_to_range(reporting_month)
-    slug    = _slugify(f"{site_name}_{reporting_month}")
+
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+
+    import pandas as pd
+    from src.data.sql_fetcher import (
+        fetch_ade_data,
+        fetch_controllers_by_serials,
+        fetch_service_notes,
+        fetch_site_controllers,
+    )
+    from src.data.telemetry_fetcher import fetch_telemetry, get_bearer_token
+    from src.data.scc_fetcher import fetch_scc_for_site
+
+    days = args.days or int(os.environ.get("TELEMETRY_DAYS", 90))
+
+    if requested_controller_ids:
+        log.info("Resolving controller ID(s) from SQL: %s", requested_controller_ids)
+        resolved_controllers_df = fetch_controllers_by_serials(requested_controller_ids)
+        if resolved_controllers_df.empty:
+            log.error("No active ACM controllers found for: %s", requested_controller_ids)
+            sys.exit(1)
+
+        found = {str(value).lower() for value in resolved_controllers_df["SerialNumber"].dropna().tolist()}
+        missing = [value for value in requested_controller_ids if value.lower() not in found]
+        if missing:
+            log.error("Controller ID(s) not found or not ACM-enabled: %s", missing)
+            sys.exit(1)
+
+        site_names = sorted({str(value).strip() for value in resolved_controllers_df["SiteName"].dropna().tolist()})
+        if len(site_names) != 1:
+            log.error("Controller IDs must belong to one site for a single report. Found sites: %s", site_names)
+            sys.exit(1)
+        site_name = site_names[0]
+    else:
+        site_name = args.site
+        resolved_controllers_df = None
+
+    slug    = build_cache_slug(site_name, reporting_month, requested_controller_ids)
     out_dir = DATA_STORE / slug
     tel_dir = out_dir / "telemetry"
 
@@ -78,23 +122,20 @@ def main():
 
     log.info("=" * 60)
     log.info(f"PREFETCH  →  {site_name}  |  {reporting_month}")
+    if requested_controller_ids:
+        log.info(f"Requested controllers → {requested_controller_ids}")
     log.info(f"Output    →  {out_dir}")
     log.info(f"Period    →  {start_date}  →  {end_date}")
     log.info("=" * 60)
 
-    from dotenv import load_dotenv
-    load_dotenv(ROOT / ".env")
-
-    import pandas as pd
-    from src.data.sql_fetcher import fetch_site_controllers, fetch_service_notes, fetch_ade_data
-    from src.data.telemetry_fetcher import fetch_telemetry, get_bearer_token
-    from src.data.scc_fetcher import fetch_scc_for_site
-
-    days = args.days or int(os.environ.get("TELEMETRY_DAYS", 90))
-
     # ── Step 1: Controllers ───────────────────────────────────────────────────
     ctrl_path = out_dir / "controllers.json"
-    if ctrl_path.exists() and not args.force:
+    if requested_controller_ids:
+        log.info("Step 1/5 — Using requested controller ID(s) from SQL …")
+        controllers_df = resolved_controllers_df
+        controllers_df.to_json(ctrl_path, orient="records", indent=2)
+        log.info(f"  ✓  {len(controllers_df)} requested controller(s) → controllers.json")
+    elif ctrl_path.exists() and not args.force:
         log.info("Step 1/5 — controllers.json already cached, skipping")
         controllers_df = pd.read_json(ctrl_path)
     else:
@@ -176,6 +217,7 @@ def main():
     manifest = {
         "fetched_at":      datetime.utcnow().isoformat(),
         "site_name":       site_name,
+        "requested_controller_ids": requested_controller_ids,
         "reporting_month": reporting_month,
         "start_date":      start_date,
         "end_date":        end_date,
@@ -197,7 +239,11 @@ def main():
     log.info("=" * 60)
     log.info(f"✅  Prefetch complete  →  {out_dir}")
     log.info(f"    Next step:")
-    log.info(f'    python prepare_report_context.py --site "{site_name}" --month "{reporting_month}"')
+    if requested_controller_ids:
+        controller_args = " ".join(f'"{controller_id}"' for controller_id in requested_controller_ids)
+        log.info(f'    python prepare_report_context.py --controller-ids {controller_args} --month "{reporting_month}"')
+    else:
+        log.info(f'    python prepare_report_context.py --site "{site_name}" --month "{reporting_month}"')
     log.info("=" * 60)
 
 
