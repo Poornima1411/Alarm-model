@@ -212,6 +212,12 @@ def _fmt_pct(value):
     return f"{value:.1f}%" if value is not None else "N/A"
 
 
+def _fmt_value(value, unit="", decimals=1):
+    if value is None:
+        return "N/A"
+    return f"{value:.{decimals}f}{unit}"
+
+
 def _trend_split(values, threshold=0.01):
     if values is None or len(values) < 4:
         return None, None, "unknown"
@@ -227,6 +233,108 @@ def _trend_split(values, threshold=0.01):
     else:
         trend = "stable"
     return early, late, trend
+
+
+def _pattern_word(trend):
+    if trend == "increased":
+        return "increased across the month"
+    if trend == "decreased":
+        return "decreased across the month"
+    if trend == "stable":
+        return "remained broadly stable across the month"
+    return "did not show a clear month-long direction"
+
+
+def _series_for_comment(month_df, col):
+    if col is None or col not in month_df.columns:
+        return pd.Series(dtype=float)
+    return pd.to_numeric(month_df[col], errors="coerce").dropna()
+
+
+def _pct_in_range_from_series(values, lower, upper):
+    if values.empty or lower is None or upper is None:
+        return None
+    return round(float(((values >= lower) & (values <= upper)).mean() * 100), 1)
+
+
+def _position_text(mean, lower, upper, label="average"):
+    if mean is None or lower is None or upper is None:
+        return f"The {label} could not be compared with a configured range."
+    if mean < lower:
+        return f"The {label} was below the configured range."
+    if mean > upper:
+        return f"The {label} was above the configured range."
+    return f"The {label} was within the configured range."
+
+
+def _chart_pattern_comment(kind, k, month_df):
+    if kind == "corrosion":
+        ms = _series_for_comment(month_df, k.get("ms_col"))
+        cu = _series_for_comment(month_df, k.get("cu_col"))
+        _, _, ms_trend = _trend_split(ms)
+        _, _, cu_trend = _trend_split(cu)
+        ms_mean = k.get("ms_mean")
+        cu_mean = k.get("cu_mean")
+        ms_status = "within" if ms_mean is not None and ms_mean < 3.0 else "outside"
+        cu_status = "within" if cu_mean is not None and cu_mean < 0.5 else "outside"
+        return [
+            f"Mild steel corrosion {_pattern_word(ms_trend)}, while copper corrosion {_pattern_word(cu_trend)}.",
+            f"The monthly averages were MS {_fmt_value(ms_mean, ' MPY', 3)} and Cu {_fmt_value(cu_mean, ' MPY', 3)} when data was available.",
+            f"MS was {ms_status} the 3.0 MPY target, and Cu was {cu_status} the 0.5 MPY target.",
+            "The pattern should continue to be monitored for any sustained upward corrosion movement.",
+        ]
+
+    if kind == "scale":
+        trace = _series_for_comment(month_df, k.get("tp_col"))
+        trace_start, trace_end, trace_trend = _trend_split(trace)
+        pct_range = _pct_in_range_from_series(trace, k.get("tp_ll"), k.get("tp_ul"))
+        position = _position_text(k.get("tp_mean"), k.get("tp_ll"), k.get("tp_ul"), "Traced Product average")
+        return [
+            f"Traced Product {_pattern_word(trace_trend)}.",
+            f"The trend moved from about {_fmt_value(trace_start, ' ppm')} at the start to {_fmt_value(trace_end, ' ppm')} at the end.",
+            f"{position} The monthly in-range performance was {_fmt_pct(pct_range)}.",
+            "This pattern indicates whether feed control is settling into the setpoint band or needs field review.",
+        ]
+
+    if kind == "orp_corrosion":
+        orp = _series_for_comment(month_df, k.get("orp_col"))
+        cu = _series_for_comment(month_df, k.get("cu_col"))
+        _, _, orp_trend = _trend_split(orp)
+        _, _, cu_trend = _trend_split(cu)
+        spike_text = "ORP showed a visible spike response pattern" if len(orp) and orp.max() > orp.median() + 200 else "ORP did not show a strong spike response pattern"
+        return [
+            f"{spike_text} during the month.",
+            f"The ORP pattern {_pattern_word(orp_trend)} without using absolute ORP values.",
+            f"Copper corrosion {_pattern_word(cu_trend)} while the ORP pattern changed.",
+            "This pattern helps confirm whether biocide response is consistent without creating a corrosion upset.",
+        ]
+
+    if kind == "biocide_corrosion":
+        relay = _series_for_comment(month_df, k.get("rel_col"))
+        cu = _series_for_comment(month_df, k.get("cu_col"))
+        _, _, relay_trend = _trend_split(relay)
+        _, _, cu_trend = _trend_split(cu)
+        relay_text = "Biocide relay activity was present" if len(relay) and relay.mean() > 0.01 else "Biocide relay activity was limited or not visible"
+        return [
+            f"{relay_text} in the monthly trend.",
+            f"Relay activity {_pattern_word(relay_trend)} when the month is split into early and late periods.",
+            f"Copper corrosion {_pattern_word(cu_trend)} during the same period.",
+            "The pattern should be reviewed with service observations to confirm feed timing and corrosion stability.",
+        ]
+
+    if kind == "conductivity":
+        cond = _series_for_comment(month_df, k.get("ec_col"))
+        cond_start, cond_end, cond_trend = _trend_split(cond)
+        pct_range = _pct_in_range_from_series(cond, k.get("ec_ll"), k.get("ec_ul"))
+        position = _position_text(k.get("ec_mean"), k.get("ec_ll"), k.get("ec_ul"), "conductivity average")
+        return [
+            f"Conductivity {_pattern_word(cond_trend)}.",
+            f"The trend moved from about {_fmt_value(cond_start, ' uS/cm')} at the start to {_fmt_value(cond_end, ' uS/cm')} at the end.",
+            f"{position} The monthly in-range performance was {_fmt_pct(pct_range)}.",
+            "This pattern indicates whether cycles, makeup, blowdown, or dilution behavior needs follow-up.",
+        ]
+
+    return []
 
 
 def _ade_residual_status(ade, trend_date):
@@ -255,13 +363,20 @@ def _ade_residual_status(ade, trend_date):
 
 def _scale_control_comment(k, ade, month_df, ts_col):
     trace_col = k.get("tp_col")
+    tag_col = k.get("tag_polymer_col")
     cond_col = k.get("ec_col")
     target = k.get("tp_sp")
     if not trace_col or trace_col not in month_df.columns or not target:
         return ""
 
-    frame = month_df[[ts_col, trace_col] + ([cond_col] if cond_col and cond_col in month_df.columns else [])].copy()
+    optional_cols = []
+    for col in (tag_col, cond_col):
+        if col and col in month_df.columns and col not in optional_cols:
+            optional_cols.append(col)
+    frame = month_df[[ts_col, trace_col] + optional_cols].copy()
     frame[trace_col] = pd.to_numeric(frame[trace_col], errors="coerce")
+    if tag_col and tag_col in frame.columns:
+        frame[tag_col] = pd.to_numeric(frame[tag_col], errors="coerce")
     if cond_col and cond_col in frame.columns:
         frame[cond_col] = pd.to_numeric(frame[cond_col], errors="coerce")
     frame = frame.dropna(subset=[ts_col, trace_col]).sort_values(ts_col)
@@ -272,7 +387,6 @@ def _scale_control_comment(k, ade, month_df, ts_col):
     trace = frame[trace_col]
     trace_early, trace_late, trace_trend = _trend_split(trace)
     in_range_pct = k.get("tp_pct")
-    higher_pct = round(float((trace > target).mean() * 100), 1)
     chunk_size = max(len(trace) // 4, 1)
     initial_trace = trace.iloc[:chunk_size]
     final_trace = trace.iloc[-chunk_size:]
@@ -309,6 +423,32 @@ def _scale_control_comment(k, ade, month_df, ts_col):
         "Traced Product in-range performance could not be calculated for this reporting month."
     ]
 
+    polymer_rate = None
+    trace_higher_than_tag_pct = None
+    if tag_col and tag_col in frame.columns:
+        polymer_frame = frame[[trace_col, tag_col]].dropna()
+        polymer_frame = polymer_frame[polymer_frame[trace_col] > 0]
+        if not polymer_frame.empty:
+            polymer_rate = (polymer_frame[trace_col] - polymer_frame[tag_col]) / polymer_frame[trace_col] * 100
+            trace_higher_than_tag_pct = round(float((polymer_frame[trace_col] > polymer_frame[tag_col]).mean() * 100), 1)
+            k["polymer_consumption_rate_pct"] = round(float(polymer_rate.mean()), 1)
+            rate_chunk_size = max(len(polymer_rate) // 4, 1)
+            rate_start = float(polymer_rate.iloc[:rate_chunk_size].mean())
+            rate_end = float(polymer_rate.iloc[-rate_chunk_size:].mean())
+            if rate_end > rate_start:
+                rate_direction = "increased"
+            elif rate_end < rate_start:
+                rate_direction = "decreased"
+            else:
+                rate_direction = "remained stable"
+            notes.append(
+                f"Polymer consumption rate averaged {_fmt_pct(k['polymer_consumption_rate_pct'])} and "
+                f"{rate_direction} from {_fmt_pct(rate_start)} at the start of the month "
+                f"to {_fmt_pct(rate_end)} at the end of the month."
+            )
+    else:
+        k["polymer_consumption_rate_pct"] = None
+
     initial_high_later_maintained = initial_high >= 50 and final_in_range >= 75
     initial_high_later_improved = initial_high >= 50 and final_in_range > initial_in_range and not initial_high_later_maintained
     initial_good_later_changed = initial_in_range >= 75 and final_in_range < 75
@@ -341,14 +481,16 @@ def _scale_control_comment(k, ade, month_df, ts_col):
                 f"End-of-month Traced Product was {final_trace_above_setpoint_pct:.1f}% higher than the setpoint, so the pump stroke will be reduced during the upcoming service visit."
             )
 
-    if higher_pct >= 90:
-        polymer_rate = (trace - target) / trace
-        rate_early, rate_late, rate_trend = _trend_split(polymer_rate)
+    if trace_higher_than_tag_pct is not None and trace_higher_than_tag_pct >= 90:
+        if polymer_rate is None:
+            rate_early, rate_late, rate_trend = None, None, "unknown"
+        else:
+            rate_early, rate_late, rate_trend = _trend_split(polymer_rate)
         if rate_trend == "increased":
             trend_date = frame.iloc[len(frame) // 2][ts_col]
             notes.append(
-                f"Trace was higher than target for {higher_pct:.1f}% of the month. "
-                f"The calculated polymer consumption rate ((trace - target) / trace) increased from {_fmt_pct(rate_early * 100)} early in the month to {_fmt_pct(rate_late * 100)} later in the month, so scale control needs attention."
+                f"Traced Product was higher than Tagged Polymer for {trace_higher_than_tag_pct:.1f}% of the month. "
+                f"The calculated polymer consumption rate increased from {_fmt_pct(rate_early)} early in the month to {_fmt_pct(rate_late)} later in the month, so scale control needs attention."
             )
             notes.append(_ade_residual_status(ade, trend_date))
             if cond_trend == "increased":
@@ -373,6 +515,7 @@ def compute_kpis(scc, ade, service_notes, month_df, ts_col):
     cu_col   = find_col("corrosion_probe_2")
     ec_col   = find_col("electrode_conductivity") or find_col("conductivity")
     tp_col   = find_col("fluorometer_ch_1") or find_col("fluorometer","ch1")
+    tag_polymer_col = find_col("fluorometer_ch_2") or find_col("fluorometer","ch2")
     ph_col   = find_col("ph_probe") or find_col("ph")
     orp_col  = find_col("orp")
     turb_col = find_col("turbidity")
@@ -380,7 +523,7 @@ def compute_kpis(scc, ade, service_notes, month_df, ts_col):
     rel_col  = find_col("relay3") or find_col("relay5") or find_col("relay1")
 
     k["ms_col"] = ms_col; k["cu_col"] = cu_col; k["ec_col"] = ec_col
-    k["tp_col"] = tp_col; k["orp_col"] = orp_col; k["rel_col"] = rel_col
+    k["tp_col"] = tp_col; k["tag_polymer_col"] = tag_polymer_col; k["orp_col"] = orp_col; k["rel_col"] = rel_col
     k["ph_col"] = ph_col; k["turb_col"] = turb_col; k["cf_col"] = cf_col
 
     def series(col):
@@ -394,7 +537,7 @@ def compute_kpis(scc, ade, service_notes, month_df, ts_col):
     k["ms_mean"] = smean(ms_col); k["ms_min"] = smin(ms_col); k["ms_max"] = smax(ms_col)
     k["cu_mean"] = smean(cu_col); k["cu_min"] = smin(cu_col); k["cu_max"] = smax(cu_col)
     k["ec_mean"] = smean(ec_col); k["ph_mean"] = smean(ph_col)
-    k["tp_mean"] = smean(tp_col); k["turb_mean"] = smean(turb_col)
+    k["tp_mean"] = smean(tp_col); k["tag_polymer_mean"] = smean(tag_polymer_col); k["turb_mean"] = smean(turb_col)
     k["cf_mean"] = smean(cf_col)
 
     # Controller Setpoints
@@ -794,10 +937,18 @@ def add_img(doc, path, w=6.0, caption=None, fig_num=None):
 
 def add_comment(doc, text):
     if not text: return
+    lines = text if isinstance(text, list) else str(text).splitlines()
+    lines = [line.strip() for line in lines if line and line.strip()]
+    if not lines: return
     p=doc.add_paragraph()
     p.paragraph_format.space_before=Pt(2); p.paragraph_format.space_after=Pt(10)
-    r=p.add_run(f"Comment: {text}")
-    r.font.size=Pt(9.5); r.font.italic=True; r.font.color.rgb=RGBColor(0x33,0x33,0x33)
+    label=p.add_run("Comment: ")
+    label.font.size=Pt(9.5); label.font.italic=True; label.font.bold=True; label.font.color.rgb=RGBColor(0x33,0x33,0x33)
+    for index, line in enumerate(lines):
+        if index:
+            p.add_run().add_break()
+        r=p.add_run(line)
+        r.font.size=Pt(9.5); r.font.italic=True; r.font.color.rgb=RGBColor(0x33,0x33,0x33)
 
 
 def add_table(doc, headers, rows, col_cm):
@@ -960,30 +1111,31 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
     add_h2(doc,"Corrosion Rate")
     add_img(doc, charts["corrosion"],
             caption=f"Corrosion Rate — {month}", fig_num=1)
-    add_comment(doc, narr.get("corrosion_chart_comment",""))
+    add_comment(doc, _chart_pattern_comment("corrosion", k, month_df))
 
     # Chart 2: Traced Product
     add_h2(doc,f"{prod} Control Trend")
     add_img(doc, charts["traced_product"],
             caption=f"{prod} — {month}", fig_num=2)
-    add_comment(doc, narr.get("scale_chart_comment",""))
+    add_comment(doc, _chart_pattern_comment("scale", k, month_df))
 
     # Chart 3: ORP vs Copper Corrosion
     add_h2(doc,"ORP vs Copper Corrosion Rate")
     add_img(doc, charts["orp_corrosion"],
             caption=f"ORP vs Copper Corrosion Rate — {month}", fig_num=3)
-    add_comment(doc, narr.get("orp_chart_comment",""))
+    add_comment(doc, _chart_pattern_comment("orp_corrosion", k, month_df))
 
     # Chart 4: Biocide Relay vs Copper Corrosion
     add_h2(doc,"Oxidizing Biocide Pump Relay vs Copper Corrosion")
     add_img(doc, charts["biocide_corrosion"],
             caption=f"Oxidizing Biocide Pump Relay vs Copper Corrosion — {month}", fig_num=4)
+    add_comment(doc, _chart_pattern_comment("biocide_corrosion", k, month_df))
 
     # Chart 5: Conductivity
     add_h2(doc,"Electrode Conductivity")
     add_img(doc, charts["conductivity"],
             caption=f"Electrode Conductivity — {month}", fig_num=5)
-    add_comment(doc, narr.get("conductivity_chart_comment",""))
+    add_comment(doc, _chart_pattern_comment("conductivity", k, month_df))
 
     doc.add_page_break()
 

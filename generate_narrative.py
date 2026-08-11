@@ -218,16 +218,22 @@ PRODUCT EFFICIENCY:
 PROACTIVE SYSTEM SUPPORT:
 - Title must be exactly "Proactive System Support". Never "Alarms".
 
+CHART COMMENTS:
+- Each chart comment must be 3-4 short lines.
+- Explain the visible pattern: start-to-end direction, stability or spikes, relationship to control limits/targets, and what the pattern means operationally.
+- Do not write vague comments like "trend was reviewed".
+- For ORP comments, describe spike pattern only and never write absolute ORP values.
+
 Return ONLY valid JSON with exactly these 11 keys, no markdown, no explanation:
 {
   "corrosion_narrative": "...",
-  "corrosion_chart_comment": "1 sentence describing the corrosion trend",
+    "corrosion_chart_comment": "3-4 short lines explaining the corrosion pattern",
   "scale_narrative": "...",
-  "scale_chart_comment": "1 sentence describing the traced product trend chart",
+    "scale_chart_comment": "3-4 short lines explaining the traced product pattern",
   "microbial_narrative": "...",
-  "orp_chart_comment": "1 sentence describing the ORP vs copper corrosion chart",
+    "orp_chart_comment": "3-4 short lines explaining the ORP spike pattern versus copper corrosion",
   "water_efficiency_narrative": "...",
-  "conductivity_chart_comment": "1 sentence describing the conductivity trend chart",
+    "conductivity_chart_comment": "3-4 short lines explaining the conductivity pattern",
   "product_efficiency_narrative": "...",
   "proactive_support_narrative": "...",
   "closing_summary": "2-3 sentences summarising the month"
