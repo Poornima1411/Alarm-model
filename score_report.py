@@ -193,6 +193,7 @@ def compute_expected(data):
     cu_s  = find("corrosion_probe_2")
     ec_s  = find("electrode_conductivity")
     tp_s  = find("fluorometer_ch_1") or find("fluorometer", "ch1")
+    tag_s = find("fluorometer_ch_2") or find("fluorometer", "ch2")
     orp_s = find("orp")
     rel_s = find("relay3") or find("relay5") or find("relay1")
 
@@ -241,6 +242,10 @@ def compute_expected(data):
     corr_ok = (ms_mean is not None and ms_mean < 3.0) and (cu_mean is not None and cu_mean < 0.5)
 
     tp_mean = smean(tp_s)
+    tag_mean = smean(tag_s)
+    polymer_consumption_rate_pct = None
+    if tp_mean is not None and tag_mean is not None and tp_mean > 0 and tp_mean > tag_mean:
+        polymer_consumption_rate_pct = round((tp_mean - tag_mean) / tp_mean * 100, 1)
     if tp_mean and tp_ul and tp_ll:
         tp_dir = "HIGH" if tp_mean > tp_ul else ("LOW" if tp_mean < tp_ll else "OK")
     else:
@@ -263,6 +268,7 @@ def compute_expected(data):
         "tp_status": status_from_percent(tp_pct),
         "tp_dir": tp_dir,
         "tp_mean": tp_mean,
+        "polymer_consumption_rate_pct": polymer_consumption_rate_pct,
         "ec_sp": ec_sp, "ec_db": ec_db,
         "ec_ll": ec_ll, "ec_ul": ec_ul,
         "ec_pct": ec_pct,
@@ -365,25 +371,31 @@ def run_narrative_checks(narr, expected, report_text=""):
     # ══════════════════════════════════════════════════════════════════════════
     cat = "Corrosion Control"
 
-    corr_text = narr.get("corrosion_narrative", "")
+    corr_text = _section_text(report_text, "Corrosion Control", ["Scale Control", "Microbial Control"]) or narr.get("corrosion_narrative", "")
 
     # ── 3. Exact MS wording ───────────────────────────────────────────────────
-    ms_pattern = r"mild steel corrosion rate was .+?MPY against the target of within 3\.0 MPY"
+    ms_pattern = r"mild steel and copper corrosion rates averaged .+?mpy and .+?mpy"
     has_ms_wording = bool(re.search(ms_pattern, corr_text, re.IGNORECASE))
     checks.append(Check(cat, "Exact MS corrosion wording",
                         8, has_ms_wording,
-                        "Must contain: 'mild steel corrosion rate was X MPY against the target of within 3.0 MPY'"))
+                        "Must contain: 'mild steel and copper corrosion rates averaged X.XX mpy and X.XX mpy'"))
 
     # ── 4. Exact Cu wording ───────────────────────────────────────────────────
-    cu_pattern = r"copper corrosion rate was .+?MPY against the target of within 0\.5 MPY"
+    cu_pattern = r"recommended limits of <5 mpy and <0\.5 mpy"
     has_cu_wording = bool(re.search(cu_pattern, corr_text, re.IGNORECASE))
     checks.append(Check(cat, "Exact Cu corrosion wording",
                         8, has_cu_wording,
-                        "Must contain: 'copper corrosion rate was X MPY against the target of within 0.5 MPY'"))
+                        "Must contain: 'recommended limits of <5 mpy and <0.5 mpy'"))
+
+    corrosion_values_match = re.search(
+        r"mild steel and copper corrosion rates averaged\s+([\d.]+)\s+mpy\s+and\s+([\d.]+)\s+mpy",
+        corr_text,
+        re.IGNORECASE,
+    )
 
     # ── 5. MS mean value correct ──────────────────────────────────────────────
     if expected["ms_mean"] is not None:
-        ms_val_match = re.search(r"mild steel corrosion rate was\s+([\d.]+)", corr_text, re.IGNORECASE)
+        ms_val_match = corrosion_values_match or re.search(r"mild steel corrosion rate was\s+([\d.]+)", corr_text, re.IGNORECASE)
         if ms_val_match:
             reported = float(ms_val_match.group(1))
             expected_val = round(expected["ms_mean"], 2)
@@ -396,10 +408,10 @@ def run_narrative_checks(narr, expected, report_text=""):
 
     # ── 6. Cu mean value correct ──────────────────────────────────────────────
     if expected["cu_mean"] is not None:
-        cu_val_match = re.search(r"copper corrosion rate was\s+([\d.]+)", corr_text, re.IGNORECASE)
+        cu_val_match = corrosion_values_match or re.search(r"copper corrosion rate was\s+([\d.]+)", corr_text, re.IGNORECASE)
         if cu_val_match:
-            reported = float(cu_val_match.group(1))
-            expected_val = round(expected["cu_mean"], 4)
+            reported = float(cu_val_match.group(2) if corrosion_values_match else cu_val_match.group(1))
+            expected_val = round(expected["cu_mean"], 2)
             close = abs(reported - expected_val) <= 0.05
             checks.append(Check(cat, "Cu mean value accuracy",
                                 5, close,
@@ -471,9 +483,10 @@ def run_narrative_checks(narr, expected, report_text=""):
                             4, has_rec))
 
     # ── 12. Root cause uses conductivity comparison ───────────────────────────
-        has_root_cause = ("conductivity" in scale_full_text.lower()
-                 and any(w in scale_full_text.lower() for w in
-                     ["stable", "also", "remained", "declined", "decreased", "water loss", "cycles of concentration", "optimised"]))
+    scale_lower = scale_full_text.lower()
+    has_root_cause = ("conductivity" in scale_lower
+             and any(w in scale_lower for w in
+                 ["stable", "also", "remained", "declined", "decreased", "water loss", "cycles of concentration", "optimised"]))
     checks.append(Check(cat, "Root cause references conductivity behaviour",
                         4, has_root_cause,
                         "Scale Control must explain root cause using conductivity comparison"))
@@ -481,12 +494,15 @@ def run_narrative_checks(narr, expected, report_text=""):
     # ══════════════════════════════════════════════════════════════════════════
     cat = "Microbial Control"
 
-    micro_text = narr.get("microbial_narrative", "")
+    micro_text = _section_text(report_text, "Microbial Control", ["Water Efficiency", "Product Efficiency"]) or narr.get("microbial_narrative", "")
     orp_comment = narr.get("orp_chart_comment", "")
     micro_full = micro_text + " " + orp_comment
 
     # ── 13. No absolute ORP values ────────────────────────────────────────────
-    orp_abs = re.findall(r"\b\d{2,4}\s*m[Vv]\b", micro_full)
+    orp_abs = [
+        value for value in re.findall(r"\b\d{2,4}\s*m[Vv]\b", micro_full)
+        if value.lower() != "50 mv"
+    ]
     checks.append(Check(cat, "No absolute ORP values in narrative",
                         8, len(orp_abs) == 0,
                         f"Found ORP values: {orp_abs}" if orp_abs else "Clean"))
@@ -499,9 +515,12 @@ def run_narrative_checks(narr, expected, report_text=""):
                             5, has_frc and has_frc_val,
                             f"Expected FRC: {expected['frc']}"))
     else:
-        has_not_avail = ("not available" in micro_text.lower()
-                        or "will be checked" in micro_text.lower()
-                        or "upcoming service visit" in micro_text.lower())
+        micro_lower = micro_text.lower()
+        has_not_avail = ("not available" in micro_lower
+                or "will be checked" in micro_lower
+                or "upcoming service visit" in micro_lower
+                or "upcoming visit" in micro_lower
+                or "will be analysed" in micro_lower)
         checks.append(Check(cat, "FRC not-available statement present",
                             5, has_not_avail,
                             "Must state FRC will be checked at next service visit"))
@@ -513,6 +532,11 @@ def run_narrative_checks(narr, expected, report_text=""):
     checks.append(Check(cat, "ORP spike/Delta ORP comment present",
                         6, has_orp_spike,
                         "MANDATORY in every report"))
+
+    has_forbidden_copper = "no copper corrosion within target" in micro_text.lower()
+    checks.append(Check(cat, "No copper corrosion target sentence",
+                        3, not has_forbidden_copper,
+                        "Remove 'No copper corrosion within target' from Microbial Control"))
 
     # ── 16. No 'relay firing' language ────────────────────────────────────────
     has_relay_firing = "relay firing" in micro_full.lower()
@@ -649,7 +673,7 @@ def run_generated_report_checks(md_text, expected):
     narrative_block = "\n".join(narrative_lines)
     orp_in_narr = re.findall(r"\b\d{2,4}\s*m[Vv]\b", narrative_block)
     # Filter out false positives from chart legends/labels
-    real_orp = [v for v in orp_in_narr if not any(w in v.lower() for w in ["0 mv"])]
+    real_orp = [v for v in orp_in_narr if not any(w in v.lower() for w in ["0 mv", "50 mv"])]
     checks.append(Check(cat, "No absolute ORP values in narrative text",
                         5, len(real_orp) == 0,
                         f"Found: {real_orp[:5]}" if real_orp else "Clean"))
@@ -765,10 +789,14 @@ def evaluate_checklist_item(item_text, data, expected):
         if expected.get("tp_dir") != "LOW":
             return not_applicable("Traced product is not below range")
         return present("inventory", "pump", "prime", "discharge line"), "Low trace with stable conductivity wording checked"
-    if "trace is higher" in item_lower or "polymer consumption" in item_lower:
+    if "polymer consumption" in item_lower:
+        if expected.get("polymer_consumption_rate_pct") is None:
+            return "polymer consumption" not in lower, "Polymer consumption omitted because Tagged Polymer is higher than Traced Product"
+        return present("polymer consumption"), "Polymer consumption wording checked"
+    if "trace is higher" in item_lower:
         if expected.get("tp_dir") != "HIGH":
             return not_applicable("Traced product is not above range")
-        return present("scale control needs attention", "phosphate", "silica", "upcoming service"), "High trace/polymer consumption wording checked"
+        return present("higher than the setpoint", "higher than target", "above"), "High trace wording checked without polymer consumption text"
     if "conductivity has increased" in item_lower and "cycles" in item_lower:
         return present("cycles", "cycles of concentration", "COC"), "Cycles language checked"
 

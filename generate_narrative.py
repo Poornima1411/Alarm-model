@@ -38,7 +38,7 @@ from src.report_cache import build_cache_slug, find_cache_by_controller_ids, nor
 
 ROOT       = Path(__file__).parent
 DATA_STORE = ROOT / "data_store"
-load_dotenv(ROOT / ".env")
+load_dotenv(ROOT / ".env", override=True)
 
 
 def parse_args():
@@ -186,27 +186,34 @@ SYSTEM_PROMPT = """You are a monthly cooling water performance report writer for
 Write professional, customer-facing narrative content following these rules exactly:
 
 CORROSION CONTROL:
-- Use exact wording: "The average mild steel corrosion rate was X MPY against the target of within 3.0 MPY, and the average copper corrosion rate was X MPY against the target of within 0.5 MPY."
+- Use exact wording with two decimal places before mpy: "During the reporting period, the system remained under good control. The mild steel and copper corrosion rates averaged X.XX mpy and X.XX mpy, respectively, both of which are well within the recommended limits of <5 mpy and <0.5 mpy."
+- Do not include status wording in the narrative sentence; the report template adds Status separately.
+- Do not add trend-comparison sentences such as mild steel increased while copper decreased or recommendations to compare movement with product residual/ORP trends.
 
 SCALE CONTROL:
-- Write ONLY about Traced Product. Do NOT mention conductivity, pH, turbidity, or any other parameter.
+- Write about Traced Product and state how much Conductivity was within the recommended range. Do NOT mention pH, turbidity, or any other parameter.
 - Status MUST reflect % in range: Excellent >75%, Acceptable 25-75%, Critical <25%.
 - Use only these customer-facing status labels: Excellent, Acceptable, Critical.
 - If product HIGH (above upper SCC limit): include Observation + Recommendation (check pump rate, verify fluorometer calibration, review dosing schedule).
 - If product LOW (below lower SCC limit): include Observation + Recommendation (check pump prime, verify inventory, inspect feed line, verify fluorometer calibration).
-- First line must state how much Traced Product was within the Controller Setpoint control range.
+- First line must state how much Traced Product was within the recommended range.
 - If trace was higher only in the initial days and later moved closer to the control band, mention that detail. If end-of-month control is maintained well, highlight that product is now maintained well; otherwise state it is not yet consistently maintained well.
 - If end-of-month trace is higher than setpoint by up to 5%, do not write the exact deviation; mention that the deviation is minimal and the control logic will be optimised. If it is higher than setpoint by more than 5%, mention the pump stroke will be reduced during the upcoming service visit.
+- Calculate polymer consumption internally where data supports it. Mention polymer consumption rate only when Traced Product is higher than Tagged Polymer; if Tagged Polymer is higher, omit polymer consumption from customer-facing text.
+- If polymer consumption increased by more than 5%, the last Scale Control line must state that phosphate residual will be checked during the upcoming service visit.
 - If product control was good initially and later decreased, use conductivity to explain the likely cause: product decreased with conductivity decreased = water loss in the system; product decreased while conductivity was maintained well = possible lack of inventory or dosing pump lost prime.
 - If conductivity was below its setpoint configuration range for most of the same period, state that water loss, dilution, or blowdown/makeup behavior should be inspected during the upcoming service visit.
 - If product control was good initially and later increased, state that feed control settings and fluorometer calibration should be reviewed during the upcoming service visit.
 
 MICROBIAL CONTROL:
 - Write ONLY about FRC, ORP, and dip-slide CFU analysis. Do NOT mention pH, turbidity, or cell fouling.
-- FRC from ADE data only. If missing: "FRC data was not available in the MDE data for this reporting period and will be checked during the upcoming service visit."
+- Do NOT mention copper corrosion or write "No copper corrosion within target" in Microbial Control.
+- If ORP spike response increases by at least 50 mV at least two times per week during oxidizing biocide application, state that it indicates good microbial dosage. Otherwise, state that insufficient ORP spike was observed during oxidizing biocide application and oxidizing biocide feed response should be reviewed during the upcoming service visit.
+- FRC from ADE data only. If FRC and dip-slide are missing, write only: "FRC and dip-slide will be analysed in the upcoming visit to ensure good microbial control." Do not say ADE or MDE data was not available in customer-facing content.
 - If dip-slide analysis is available, mention the corresponding CFU result. Interpret CFU as: <10^2 = excellent microbial control; 10^2 to <10^4 = good microbial control; 10^4 to 10^6 = needs attention; >10^6 = critical and slug dosage duration needs to be increased.
-- If dip-slide analysis is not available, state that it will be measured during the upcoming service visit.
-- ORP spike comment is MANDATORY. If consistent, write: "ORP spike response after biocide feed was consistent, indicating the slug dosage of biocide is successful." If not consistent, state that microbial control should continue to be reviewed during the upcoming service visit.
+- If FRC and dip-slide are both missing, combine them in one final sentence: "FRC and dip-slide will be analysed in the upcoming visit to ensure good microbial control."
+- If only one is missing, state that the missing FRC or dip-slide item will be analysed in the upcoming visit to ensure good microbial control.
+- The FRC sentence and dip-slide sentence must be the last statements in Microbial Control, in that order.
 - NEVER write absolute ORP values.
 
 WATER EFFICIENCY:
@@ -214,9 +221,11 @@ WATER EFFICIENCY:
 
 PRODUCT EFFICIENCY:
 - Use the exact product name from the data.
+- Calculate polymer consumption internally where data supports it. Mention polymer consumption rate only when Traced Product is higher than Tagged Polymer; if Tagged Polymer is higher, omit polymer consumption from customer-facing text.
 
 PROACTIVE SYSTEM SUPPORT:
 - Title must be exactly "Proactive System Support". Never "Alarms".
+- Mention polymer consumption in proactive support or recommendations only when Traced Product is higher than Tagged Polymer.
 
 CHART COMMENTS:
 - Each chart comment must be 3-4 short lines.

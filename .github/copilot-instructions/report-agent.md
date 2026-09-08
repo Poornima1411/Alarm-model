@@ -66,17 +66,17 @@ Section 3 gives you per-sensor statistics over the 90-day telemetry period:
 
 **Calculating % in range — exact method:**
 1. Take the `recent_20` array for the sensor
-2. Count how many values fall within the Controller Setpoint control range (SP − DB to SP + DB)
+2. Count how many values fall within the recommended range (SP - DB to SP + DB)
 3. Divide that count by 20 and multiply by 100
 4. This is the % in range used everywhere in the report
 
 **Status thresholds — apply these exactly:**
-- **Excellent** — more than 75% of recent_20 readings are within Controller Setpoint control range
-- **Acceptable** — 25% to 75% of recent_20 readings are within Controller Setpoint control range
-- **Critical** — fewer than 25% of recent_20 readings are within Controller Setpoint control range
+- **Excellent** — more than 75% of recent_20 readings are within the recommended range
+- **Acceptable** — 25% to 75% of recent_20 readings are within the recommended range
+- **Critical** — fewer than 25% of recent_20 readings are within the recommended range
 
 **NEVER IN CONTROL RULE:**
-If 0 out of 20 recent readings are within the Controller Setpoint control range, you MUST write:
+If 0 out of 20 recent readings are within the recommended range, you MUST write:
 *"The [parameter] was never within the Controller Setpoint programmed control range during the reporting period."*
 State this explicitly. Do not soften it. Do not omit it.
 
@@ -156,22 +156,27 @@ Each subsection of System Health Check must begin with a bold status label on it
 ```
 **Status:** {Excellent / Acceptable / Critical}
 
-The corrosion control trend for the month was {excellent / acceptable / critical}.
-The average mild steel corrosion rate was {MS mean from Section 3} MPY against the
-target of within 3.0 MPY, and the average copper corrosion rate was {Cu mean from
-Section 3} MPY against the target of within 0.5 MPY.
+During the reporting period, the system remained under good control. The mild steel and copper corrosion rates averaged {MS mean from Section 3, two decimals} mpy and {Cu mean from Section 3, two decimals} mpy, respectively, both of which are well within the recommended limits of <5 mpy and <0.5 mpy.
 {If no controller corrosion alarm limits are programmed, state: "No site-specific Controller Setpoint alarm
 limits are programmed for corrosion probes. Industry standard limits of 3.0 MPY for
 mild steel and 0.5 MPY for copper are applied."}
-{Short interpretation: asset protection is strong / adequate / at risk.}
 ```
+
+Do not repeat status inside the narrative sentence. Do not add mild-steel/copper movement comparisons or recommendations to compare corrosion movement with product residual/ORP trends.
 
 ---
 
 ### Scale Control
 
-> **Write ONLY about Traced Product in this section. Do NOT mention conductivity, pH,
-> turbidity, cell fouling, or any other parameter. Those belong in the Performance Summary.**
+> **Write about Traced Product and state how much Conductivity was within the recommended range.
+> Do NOT mention pH, turbidity, cell fouling, or any other parameter.**
+
+> **Calculate polymer consumption internally where data supports it. Mention polymer consumption
+> rate only when Traced Product is higher than Tagged Polymer; if Tagged Polymer is higher, omit
+> polymer consumption from customer-facing text.**
+
+> **If polymer consumption increased by more than 5%, the last Scale Control line must state that
+> phosphate residual will be checked during the upcoming service visit.**
 
 **Status determination:**
 Calculate % in range for traced product (Fluorometer Ch1) using recent_20 vs Controller Setpoint SP±DB.
@@ -188,7 +193,8 @@ Apply the status thresholds (Excellent > 75%, Acceptable 25–75%, Critical < 25
   (excess blowdown, makeup water ingress, or system water turnover)
 - Traced product below Controller Setpoint range AND conductivity stable → **product feed issue**
   (pump lost prime, empty inventory, or blocked feed line)
-- The first Scale Control line must state how much Traced Product was within the Controller Setpoint control range.
+- The first Scale Control line must state how much Traced Product was within the recommended range.
+- Scale Control must state how much Conductivity was within the recommended range.
 - If trace was higher only in the initial days and later moved closer to the control band, mention that detail.
 - If end-of-month control is maintained well, highlight that product is now maintained well; otherwise state it is not yet consistently maintained well.
 - If end-of-month trace is higher than setpoint by up to 5%, do not write the exact deviation; mention that the deviation is minimal and the control logic will be optimised.
@@ -249,10 +255,12 @@ Show the Controller Setpoint upper and lower limits as reference lines. Add Comm
 
 > **Write ONLY about FRC, ORP, and dip-slide CFU analysis in this section.**
 > **DO NOT mention pH, turbidity, cell fouling, or any other parameter here.**
+> **DO NOT mention copper corrosion or write "No copper corrosion within target" in this section.**
 > pH, turbidity, and cell fouling belong in the Performance Summary table only.
 
 FRC must come ONLY from Section 4 ADE data. Never infer FRC from ORP telemetry.
 Never state absolute ORP values anywhere. Only use ORP spike / Delta ORP response language.
+If FRC and dip-slide are missing, write only: `FRC and dip-slide will be analysed in the upcoming visit to ensure good microbial control.` Do not mention ADE or MDE data availability in customer-facing content.
 
 If dip-slide analysis or CFU is available in Section 4 ADE data or Section 5 service notes,
 mention the corresponding CFU result and interpret it as follows:
@@ -261,7 +269,9 @@ mention the corresponding CFU result and interpret it as follows:
 - **10^4 to 10^6 CFU** — needs attention
 - **>10^6 CFU** — critical microbial control; slug dosage duration needs to be increased
 
-If dip-slide analysis is not available, state that it will be measured during the upcoming service visit.
+If FRC and dip-slide are both missing, combine them in one final sentence: `FRC and dip-slide will be analysed in the upcoming visit to ensure good microbial control.`
+If only one is missing, state that the missing FRC or dip-slide item will be analysed in the upcoming visit to ensure good microbial control.
+The FRC sentence and dip-slide sentence must be the last statements in Microbial Control, in that order.
 
 **ORP comment is MANDATORY in every report — always include it.**
 Look at the relay data in Section 3 for the biocide relay (e.g. relay3, relay5).
@@ -278,8 +288,7 @@ FRC from the field test data was {value} ppm, indicating {interpretation — ade
 residual below recommended level}.
 
 {If FRC not available in Section 4:}
-FRC data was not available in the field test data for this reporting period and will be checked
-during the upcoming service visit.
+FRC and dip-slide will be analysed in the upcoming visit to ensure good microbial control.
 
 {If dip-slide analysis/CFU available in Section 4 or Section 5:}
 Dip-slide analysis reported {CFU value}, indicating {excellent microbial control / good microbial
@@ -287,20 +296,12 @@ control / microbial control needs attention / critical microbial control; slug d
 needs to be increased}.
 
 {If dip-slide analysis/CFU not available:}
-Dip-slide analysis was not available for this reporting period and will be measured during the
-upcoming service visit.
+Use the combined FRC and dip-slide sentence above if both are missing.
 
-{If ORP spike response was consistent:}
-ORP spike response after biocide feed was consistent, indicating the slug dosage of biocide is successful.
-
-{If ORP spike response was not consistent:}
-ORP spike response after biocide feed was not consistent, suggesting the probe may require inspection or
-the biocide feed schedule should be reviewed during the upcoming service visit.
-
-{If no ORP spikes observed:}
-Possible causes include low oxidizing biocide residual, biocide inventory issue, dosing pump
-lost prime, blocked or leaking chemical feed line, incorrect timer schedule, or high biological
-demand consuming the oxidizer rapidly. These will be investigated at the upcoming service visit.
+If ORP spike response increases by at least 50 mV at least two times per week during oxidizing
+biocide application, write that it indicates good microbial dosage. Otherwise write that insufficient
+ORP spike was observed during oxidizing biocide application and oxidizing biocide feed response
+should be reviewed during the upcoming service visit.
 ```
 
 **Chart: include a one-month ORP trend chart immediately after the narrative.**
@@ -323,7 +324,7 @@ Controller Setpoint target of {SP} µS/cm ({target COC} cycles). {Interpretation
 
 {If makeup conductivity not available — which is common:}
 The conductivity control setpoint is {SP} µS/cm (control range {SP−DB}–{SP+DB} µS/cm).
-Conductivity was within the Controller Setpoint control range for {%} of recent readings.
+Conductivity was within the recommended range for {%} of recent readings.
 Makeup water conductivity was not available for this period, so actual cycles of concentration
 could not be calculated. Makeup conductivity should be captured at the next service visit to
 enable full COC reporting.
@@ -341,6 +342,9 @@ Use the Product Name from Controller Setpoint Section 2. If Controller Setpoint 
 sensor label (e.g. "Traced Product" or "Fluorometer Ch1").
 
 **Must explain WHY performance is good or bad:**
+- Calculate polymer consumption internally where data supports it. Mention polymer consumption
+  rate only when Traced Product is higher than Tagged Polymer; if Tagged Polymer is higher, omit
+  polymer consumption from customer-facing text.
 - If product is ABOVE the upper control limit → state this is **overdosing**.
   Explain: dosing pump rate may be too high, fluorometer may need recalibration.
   Recommend: decrease the pump stroke, verify fluorometer calibration with a grab sample,
@@ -368,8 +372,8 @@ The product concentration was never within the Controller Setpoint programmed co
 reporting period. Dosing pump rate and fluorometer calibration require urgent review.
 
 {If actual consumption data available:}
-Product consumption was {X} lbs in {month}, which {matched / did not match} the expected
-consumption of {Y} lbs.
+Actual product usage was {X} lbs in {month}, which {matched / did not match} the expected
+usage of {Y} lbs. Do not describe this as polymer consumption.
 
 {If consumption not available:}
 Actual product consumption data was not available for this period and should be entered to
@@ -381,6 +385,7 @@ enable full product efficiency reporting.
 ### Proactive System Support
 
 ALWAYS use this exact title: **Proactive System Support**. Never "Alarms" or "Alarm Summary".
+Mention polymer consumption in proactive support or recommendations only when Traced Product is higher than Tagged Polymer.
 
 ```
 **Proactive System Support**
@@ -516,11 +521,11 @@ After writing the report, verify every item below and output the checklist:
 - [ ] Page 1 is title page with site name, month, prepared date, prepared by, report status
 - [ ] Pages 2–3 contain Executive Summary as narrative prose — no KPI tiles
 - [ ] Corrosion Control has Status label
-- [ ] Corrosion Control states: "average mild steel corrosion rate was X MPY against the target of within 3.0 MPY"
-- [ ] Corrosion Control states: "average copper corrosion rate was X MPY against the target of within 0.5 MPY"
+- [ ] Corrosion Control states two-decimal values: "mild steel and copper corrosion rates averaged X.XX mpy and X.XX mpy"
+- [ ] Corrosion Control states recommended limits: "<5 mpy and <0.5 mpy"
 - [ ] Scale Control has Status label
 - [ ] Scale Control status correctly reflects % in range (Critical if < 25%)
-- [ ] Scale Control states % time in Controller Setpoint control range using recent_20
+- [ ] Scale Control states % time in recommended range using recent_20
 - [ ] Scale Control explains root cause using conductivity behaviour
 - [ ] Scale Control states "never within range" explicitly if 0 of 20 readings in range
 - [ ] Microbial Control has Status label
@@ -558,7 +563,7 @@ After writing the report, verify every item below and output the checklist:
 9. **If Traced Product is low** — always include Observation and Recommendation
 10. **If Traced Product is high** — always include Observation and Recommendation
 11. **Scale Control must explain root cause** using conductivity behaviour comparison
-12. **Corrosion Control must use the exact wording**: "average mild steel corrosion rate was X MPY against the target of within 3.0 MPY"
+12. **Corrosion Control must use the exact wording with two decimal places**: "During the reporting period, the system remained under good control. The mild steel and copper corrosion rates averaged X.XX mpy and X.XX mpy, respectively, both of which are well within the recommended limits of <5 mpy and <0.5 mpy."
 13. **Never use average value alone** for Scale Control or Product Efficiency status
 14. **If a parameter was NEVER in range**, state it explicitly — do not soften
 15. **Use Controller Setpoint Product Name** from Section 2 — never generic "inhibitor" or "biocide"

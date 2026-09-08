@@ -2913,20 +2913,22 @@ def main():
         "- Never say 'relay firing' for product dosing. Say 'product dosing pump was active'.",
         "",
         "**CORROSION CONTROL:**",
-        f"- Use this exact wording: 'The average mild steel corrosion rate was X MPY against",
-        f"  the target of within 3.0 MPY, and the average copper corrosion rate was X MPY",
-        f"  against the target of within 0.5 MPY.'",
+        f"- Use this exact wording with two decimal places before mpy: 'During the reporting period, the system remained under good control. The mild steel and copper corrosion rates averaged X.XX mpy and X.XX mpy, respectively, both of which are well within the recommended limits of <5 mpy and <0.5 mpy.'",
+        f"- Do not include status wording in the narrative sentence; the report template adds Status separately.",
+        f"- Do not add trend-comparison sentences about mild steel/copper movement or comparing movement with product residual/ORP trends.",
         f"- Status: {corr_status}",
         "",
         "**SCALE CONTROL:**",
-        f"- Write ONLY about {prod}. Do NOT mention conductivity, pH, turbidity, or anything else.",
+        f"- Write about {prod} and state how much Conductivity was within the recommended range. Do NOT mention pH, turbidity, or anything else.",
+        f"- Calculate polymer consumption internally where data supports it. Mention polymer consumption rate only when Traced Product is higher than Tagged Polymer; if Tagged Polymer is higher, omit polymer consumption from customer-facing text.",
         f"- Status MUST be: {tp_status} (because {tp_pct}% of recent readings are in Controller Setpoint range)",
         f"- {tp_pct}% in range means: Excellent>75%, Acceptable 25-75%, Critical<25%",
         f"- Product is {tp_dir} (HIGH=above upper limit, LOW=below lower limit, OK=in range)",
-        f"- First line must state how much Traced Product was within the Controller Setpoint control range.",
+        f"- First line must state how much Traced Product was within the recommended range.",
         f"- If trace was higher only in the initial days and later moved closer to the control band, mention that detail.",
         f"- If end-of-month control is maintained well, highlight that product is now maintained well; otherwise state it is not yet consistently maintained well.",
         f"- If end-of-month trace is higher than setpoint by up to 5%, do not write the exact deviation; mention that the deviation is minimal and the control logic will be optimised.",
+        f"- If polymer consumption increased by more than 5%, the last Scale Control line must state that phosphate residual will be checked during the upcoming service visit.",
         f"- If end-of-month trace is higher than setpoint by more than 5%, mention the pump stroke will be reduced during the upcoming service visit.",
         f"- If product control was good initially and later decreased, compare conductivity: product decreased with conductivity decreased = water loss in the system; product decreased while conductivity was maintained well = possible lack of inventory or dosing pump lost prime.",
         f"- If conductivity was below its setpoint configuration range for most of the same period, state that water loss, dilution, or blowdown/makeup behavior should be inspected during the upcoming service visit.",
@@ -2959,7 +2961,8 @@ def main():
         f"- Root cause to include: '{root_cause}'",
         "",
         "**MICROBIAL CONTROL:**",
-        f"- Write ONLY about FRC and ORP. Do NOT mention pH, turbidity, cell fouling, or anything else.",
+        f"- Write ONLY about FRC, ORP spike response, and dip-slide CFU analysis. Do NOT mention pH, turbidity, cell fouling, or anything else.",
+        f"- Do NOT mention copper corrosion or write 'No copper corrosion within target' in this section.",
         f"- Status: {micro_status}",
     ]
 
@@ -2967,12 +2970,13 @@ def main():
         task_lines.append(f"- FRC from field test data: {frc} ppm. Comment on whether this is adequate.")
     else:
         task_lines.append(
-            "- FRC: NOT in field test data. Write: 'FRC data was not available in the field test data "
-            "for this reporting period and will be checked during the upcoming service visit.'")
+            "- FRC: NOT in field test data. If dip-slide is also missing, write only: 'FRC and dip-slide will be analysed in the upcoming visit to ensure good microbial control.' "
+            "Do not mention ADE/MDE data availability in customer-facing content.")
 
     task_lines += [
         f"- Biocide relay was triggered: {relay_triggered}",
-        f"- MANDATORY ORP sentence: '{'ORP spike response after biocide feed was consistent, indicating the slug dosage of biocide is successful.' if relay_triggered else 'ORP spike response after biocide feed was not consistent. Possible causes include low oxidizing biocide residual, biocide inventory issue, dosing pump lost prime, or incorrect timer schedule. These will be investigated at the upcoming service visit.'}'",
+        "- MANDATORY ORP rule: if ORP spike response increases by at least 50 mV at least two times per week during oxidizing biocide application, state that it indicates good microbial dosage. Otherwise write: 'Insufficient ORP spike was observed during oxidizing biocide application, so oxidizing biocide feed response should be reviewed during the upcoming service visit.'",
+        "- The FRC sentence and dip-slide sentence must be the last statements in Microbial Control, in that order.",
         "- NEVER write absolute ORP values in the microbial_narrative or orp_chart_comment",
         "  fields (or any other narrative text). Relative/spike language only in narrative prose.",
         "- EXCEPTION — this restriction does NOT apply to the Performance Summary table on",
@@ -2984,7 +2988,7 @@ def main():
         "**WATER EFFICIENCY:**",
         f"- Discuss conductivity and COC here (NOT in Scale Control).",
         f"- Controller Setpoint conductivity: {fmt(ec_sp,0)} µS/cm, range {fmt(ec_ll,0)}–{fmt(ec_ul,0)} µS/cm",
-        f"- {ec_pct}% of recent readings within Controller Setpoint control range",
+        f"- {ec_pct}% of recent readings within the recommended range",
         f"- 90-day average: {fmt(ec_mean,1)} µS/cm",
     ]
 
@@ -3013,6 +3017,7 @@ def main():
         f"- Mean: {fmt(tp_mean,1)} ppm vs Controller Setpoint target {fmt(tp_sp,1)} ppm (range {fmt(tp_ll,1)}–{fmt(tp_ul,1)} ppm)",
         f"- {tp_pct}% in range",
         f"- Product direction: {tp_dir}",
+        f"- Calculate polymer consumption internally where data supports it. Mention polymer consumption rate only when Traced Product is higher than Tagged Polymer; if Tagged Polymer is higher, omit polymer consumption from customer-facing text.",
         f"- If product is HIGH (overdosing): state the product is being overdosed.",
         f"  Explain: dosing pump rate may be too high, fluorometer may need recalibration.",
         f"  Recommend: decrease the pump stroke, verify fluorometer calibration with a grab",
@@ -3027,6 +3032,7 @@ def main():
         "",
         "**PROACTIVE SYSTEM SUPPORT:**",
         "- Section title MUST be exactly: Proactive System Support (never 'Alarms')",
+        "- Mention polymer consumption in proactive support or recommendations only when Traced Product is higher than Tagged Polymer.",
         "- No alarm data available — state Ackumen average is 6 alarms per controller",
         "- Incorporate any service note Actions Completed below",
         "",
@@ -3158,7 +3164,7 @@ def main():
         f"}}",
         f"",
         f"Rules:",
-        f"- Corrosion: use exact wording 'average mild steel corrosion rate was X MPY against the target of within 3.0 MPY'",
+        f"- Corrosion: use exact wording with two decimal places: 'During the reporting period, the system remained under good control. The mild steel and copper corrosion rates averaged X.XX mpy and X.XX mpy, respectively, both of which are well within the recommended limits of <5 mpy and <0.5 mpy.'",
         f"- Scale Control: {prod} ONLY. Status MUST be {tp_status} ({tp_pct}% in range).",
         f"- {'Include Observation and Recommendation for ' + tp_dir + ' product level.' if tp_dir in ('HIGH','LOW') else 'Product is within range — no observation/recommendation needed.'}",
         f"- Microbial: FRC and ORP ONLY. No pH, turbidity, cell fouling.",

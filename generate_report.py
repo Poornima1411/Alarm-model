@@ -197,7 +197,7 @@ def _format_cfu(value):
 
 def dipslide_comment(cfu):
     if cfu is None:
-        return "Dip-slide analysis was not available for this reporting period and will be measured during the upcoming service visit."
+        return "Dip-slide will be analysed in the upcoming visit to ensure good microbial control."
     cfu_text = _format_cfu(cfu)
     if cfu < 100:
         return f"Dip-slide analysis reported {cfu_text}, indicating excellent microbial control."
@@ -208,8 +208,65 @@ def dipslide_comment(cfu):
     return f"Dip-slide analysis reported {cfu_text}, indicating critical microbial control; slug dosage duration needs to be increased."
 
 
+def frc_comment(frc):
+    if frc is None:
+        return "FRC will be analysed in the upcoming visit to ensure good microbial control."
+    interpretation = "adequate oxidizing biocide residual" if frc >= 0.2 else "residual below the recommended level"
+    return f"FRC from the field test data was {frc:.2f} ppm, indicating {interpretation}."
+
+
+def _orp_spike_summary(month_df, ts_col, orp_col, threshold_mv=50.0):
+    if not orp_col or orp_col not in month_df.columns or ts_col not in month_df.columns:
+        return {"count": 0, "weeks": 0, "per_week": 0.0, "good_dosage": False}
+
+    frame = month_df[[ts_col, orp_col]].copy()
+    frame[ts_col] = pd.to_datetime(frame[ts_col], errors="coerce")
+    frame[orp_col] = pd.to_numeric(frame[orp_col], errors="coerce")
+    frame = frame.dropna(subset=[ts_col, orp_col]).sort_values(ts_col)
+    if frame.empty:
+        return {"count": 0, "weeks": 0, "per_week": 0.0, "good_dosage": False}
+
+    hourly = frame.set_index(ts_col)[orp_col].resample("1h").mean().dropna()
+    if hourly.empty:
+        return {"count": 0, "weeks": 0, "per_week": 0.0, "good_dosage": False}
+
+    spike_count = int((hourly.diff() >= threshold_mv).sum())
+    days_covered = max((hourly.index.max() - hourly.index.min()).total_seconds() / 86400.0, 1.0)
+    weeks_covered = max(days_covered / 7.0, 1.0)
+    spikes_per_week = spike_count / weeks_covered
+    return {
+        "count": spike_count,
+        "weeks": round(weeks_covered, 2),
+        "per_week": round(spikes_per_week, 2),
+        "good_dosage": spikes_per_week >= 2.0,
+    }
+
+
+def microbial_control_comment(k):
+    if k.get("frc") is None and k.get("dipslide_cfu") is None:
+        final_comments = ["FRC and dip-slide will be analysed in the upcoming visit to ensure good microbial control."]
+    else:
+        final_comments = [
+            frc_comment(k.get("frc")),
+            k.get("dipslide_comment", dipslide_comment(None)),
+        ]
+    orp_sentence = (
+        "ORP spike response of at least 50 mV was observed at least two times per week during oxidizing biocide application, indicating good microbial dosage."
+        if k.get("good_microbial_dosage")
+        else "Insufficient ORP spike was observed during oxidizing biocide application, so oxidizing biocide feed response should be reviewed during the upcoming service visit."
+    )
+    return " ".join([
+        orp_sentence,
+        *final_comments,
+    ])
+
+
 def _fmt_pct(value):
     return f"{value:.1f}%" if value is not None else "N/A"
+
+
+def _polymer_consumption_display_rates(polymer_rate):
+    return polymer_rate.clip(lower=0)
 
 
 def _fmt_value(value, unit="", decimals=1):
@@ -245,6 +302,25 @@ def _pattern_word(trend):
     return "did not show a clear month-long direction"
 
 
+def _pattern_line(label, trend, good=None):
+    if trend == "increased":
+        direction = "increasing"
+    elif trend == "decreased":
+        direction = "decreasing"
+    elif trend == "stable":
+        direction = "stable"
+    else:
+        direction = "not clearly increasing or decreasing"
+
+    if good is True and trend == "stable":
+        return f"Pattern: {label} remains good and stable across the month."
+    if good is True:
+        return f"Pattern: {label} is {direction}, but remains good against the target."
+    if good is False:
+        return f"Pattern: {label} is {direction} and needs attention against the target."
+    return f"Pattern: {label} is {direction} across the month."
+
+
 def _series_for_comment(month_df, col):
     if col is None or col not in month_df.columns:
         return pd.Series(dtype=float)
@@ -257,6 +333,37 @@ def _pct_in_range_from_series(values, lower, upper):
     return round(float(((values >= lower) & (values <= upper)).mean() * 100), 1)
 
 
+def _timestamp_col(month_df):
+    return next((c for c in month_df.columns if any(k in c.lower() for k in ("time", "date", "timestamp"))), None)
+
+
+def _recent_series_for_comment(month_df, col, days=7):
+    if col is None or col not in month_df.columns:
+        return pd.Series(dtype=float)
+    ts_col = _timestamp_col(month_df)
+    frame = month_df[[ts_col, col]].copy() if ts_col else month_df[[col]].copy()
+    frame[col] = pd.to_numeric(frame[col], errors="coerce")
+    frame = frame.dropna(subset=[col])
+    if frame.empty:
+        return pd.Series(dtype=float)
+    if ts_col:
+        frame[ts_col] = pd.to_datetime(frame[ts_col], errors="coerce")
+        frame = frame.dropna(subset=[ts_col]).sort_values(ts_col)
+        if not frame.empty:
+            cutoff = frame[ts_col].max() - pd.Timedelta(days=days)
+            recent = frame.loc[frame[ts_col] >= cutoff, col].dropna()
+            if not recent.empty:
+                return recent
+    count = min(len(frame), max(len(frame) // 4, 1))
+    return frame[col].tail(count).dropna()
+
+
+def _deviation_from_setpoint(values, setpoint):
+    if values.empty or setpoint in (None, 0, "", "NULL"):
+        return None
+    return round(float((values - float(setpoint)).abs().mean() / float(setpoint) * 100), 1)
+
+
 def _position_text(mean, lower, upper, label="average"):
     if mean is None or lower is None or upper is None:
         return f"The {label} could not be compared with a configured range."
@@ -265,6 +372,246 @@ def _position_text(mean, lower, upper, label="average"):
     if mean > upper:
         return f"The {label} was above the configured range."
     return f"The {label} was within the configured range."
+
+
+def _mean_within_range(mean, lower, upper):
+    return mean is not None and lower is not None and upper is not None and lower <= mean <= upper
+
+
+def _control_not_maintained(mean, lower, upper, in_range_pct):
+    if mean is not None and lower is not None and upper is not None and not lower <= mean <= upper:
+        return True
+    return in_range_pct is not None and in_range_pct < 75
+
+
+def _conductivity_link_reason(k, trace_trend, cond_trend):
+    tp_mean = k.get("tp_mean")
+    tp_ll = k.get("tp_ll")
+    tp_ul = k.get("tp_ul")
+    ec_mean = k.get("ec_mean")
+    ec_ll = k.get("ec_ll")
+    ec_ul = k.get("ec_ul")
+
+    both_low = tp_mean is not None and tp_ll is not None and tp_mean < tp_ll and ec_mean is not None and ec_ll is not None and ec_mean < ec_ll
+    both_high = tp_mean is not None and tp_ul is not None and tp_mean > tp_ul and ec_mean is not None and ec_ul is not None and ec_mean > ec_ul
+    same_direction = trace_trend == cond_trend and trace_trend in ("increased", "decreased")
+
+    if both_low:
+        return "Likely reason: the Traced Product trend is related to the low conductivity trend; dilution, water loss, excess blowdown, or makeup changes are pulling both down."
+    if both_high:
+        return "Likely reason: the Traced Product trend is related to the high conductivity trend; reduced blowdown, higher cycles, or concentration effects are pushing both up."
+    if same_direction:
+        return f"Likely reason: Traced Product is following the {cond_trend} conductivity trend, so cycles, blowdown, makeup, or dilution changes should be corrected first."
+    return "Likely reason: conductivity was not maintained, so the Traced Product variation should be tied to conductivity control before assigning another cause."
+
+
+def _scale_pattern_summary(k, trace_trend, recent_deviation_pct, recent_in_range_pct):
+    trace_good = _mean_within_range(k.get("tp_mean"), k.get("tp_ll"), k.get("tp_ul"))
+    ongoing_late_issue = (
+        recent_deviation_pct is not None and recent_deviation_pct >= 20
+    ) or (
+        recent_in_range_pct is not None and recent_in_range_pct < 75
+    )
+    if ongoing_late_issue:
+        return "Pattern: Traced Product is still not maintained at the end of the month."
+    return _pattern_line("Traced Product", trace_trend, trace_good)
+
+
+def _scale_recent_detail(recent_deviation_pct, trace_start, trace_end):
+    if recent_deviation_pct is not None and recent_deviation_pct >= 20:
+        return f"The last 7 days still show about {_fmt_pct(recent_deviation_pct)} deviation from setpoint, indicating the issue is still present."
+    return f"The trend moved from about {_fmt_value(trace_start, ' ppm')} at the start to {_fmt_value(trace_end, ' ppm')} at the end."
+
+
+def _scale_reason(k, trace_trend, cond_trend):
+    tp_mean = k.get("tp_mean")
+    tp_ll = k.get("tp_ll")
+    tp_ul = k.get("tp_ul")
+    ec_mean = k.get("ec_mean")
+    ec_ll = k.get("ec_ll")
+    ec_ul = k.get("ec_ul")
+
+    tp_not_maintained = _control_not_maintained(tp_mean, tp_ll, tp_ul, k.get("tp_pct"))
+    ec_not_maintained = _control_not_maintained(ec_mean, ec_ll, ec_ul, k.get("ec_pct"))
+
+    if tp_not_maintained and ec_not_maintained:
+        return _conductivity_link_reason(k, trace_trend, cond_trend)
+
+    if tp_mean is not None and tp_ul is not None and tp_mean > tp_ul:
+        if trace_trend == "decreased":
+            return "Likely reason: feed is recovering from overfeed; review pump stroke or calibration if it does not return to range."
+        return "Likely reason: overfeed, high pump output, or fluorometer calibration should be checked."
+    if tp_mean is not None and tp_ll is not None and tp_mean < tp_ll:
+        if cond_trend == "decreased" or (ec_mean is not None and ec_ll is not None and ec_mean < ec_ll):
+            return "Likely reason: water loss, dilution, excess blowdown, or makeup changes may be pulling product down."
+        return "Likely reason: low inventory, pump prime, or feed delivery should be checked."
+    if trace_trend == "decreased" and cond_trend == "decreased":
+        return "Likely reason: water loss, dilution, or blowdown/makeup changes may be reducing both product and conductivity."
+    if _mean_within_range(tp_mean, tp_ll, tp_ul) and _mean_within_range(ec_mean, ec_ll, ec_ul):
+        return "Likely reason: chemical feed and tower cycles are balanced, so scale control remains steady."
+    return "Likely reason: feed control, conductivity control, and field residuals should be reviewed together."
+
+
+def _corrosion_reason(k, ms_trend, cu_trend, corrosion_good):
+    if corrosion_good and "increased" not in (ms_trend, cu_trend):
+        return "Likely reason: inhibitor residual and operating chemistry are keeping corrosion protected."
+    if corrosion_good:
+        return "Likely reason: corrosion is still protected, but increasing movement should be checked against product and ORP trends."
+    return "Likely reason: low inhibitor residual, deposit activity, high oxidizer exposure, or control drift should be investigated."
+
+
+def _orp_reason(spike_visible, cu_good):
+    if spike_visible and cu_good:
+        return "Likely reason: biocide response is present and corrosion inhibitor is preventing a copper upset."
+    if spike_visible:
+        return "Likely reason: oxidizer response is present, but copper protection should be checked with corrosion and product residuals."
+    return "Likely reason: biocide feed timing, relay operation, oxidizer inventory, or field FRC residual should be checked."
+
+
+def _biocide_reason(relay_visible, cu_good):
+    if relay_visible and cu_good:
+        return "Likely reason: relay feed timing is adequate and copper corrosion remains protected."
+    if relay_visible:
+        return "Likely reason: biocide feed is occurring, but corrosion protection or oxidizer exposure needs review."
+    return "Likely reason: relay signal, pump operation, oxidizer inventory, or feed schedule should be checked."
+
+
+def _conductivity_reason(k, cond_trend, trace_trend):
+    ec_mean = k.get("ec_mean")
+    ec_ll = k.get("ec_ll")
+    ec_ul = k.get("ec_ul")
+
+    if ec_mean is not None and ec_ll is not None and ec_mean < ec_ll:
+        if trace_trend == "decreased":
+            return "Likely reason: dilution, water loss, excess blowdown, or makeup changes are pulling both conductivity and product down."
+        return "Likely reason: dilution, water loss, excess blowdown, or makeup changes are keeping conductivity low."
+    if ec_mean is not None and ec_ul is not None and ec_mean > ec_ul:
+        return "Likely reason: reduced blowdown, higher cycles, evaporation concentration, or concentrated makeup is raising conductivity."
+    if cond_trend == "decreased":
+        return "Likely reason: increased makeup, dilution, water loss, or blowdown activity caused the downward movement."
+    if cond_trend == "increased":
+        return "Likely reason: reduced blowdown, higher cycles, or concentration of dissolved solids caused the upward movement."
+    return "Likely reason: makeup and blowdown control are balanced, so tower cycles remained steady."
+
+
+def _add_unique_recommendation(recommendations, text, key):
+    if not text or key in {item[0] for item in recommendations}:
+        return
+    recommendations.append((key, text))
+
+
+def _proactive_support_summary(k, narr, coc, month_df):
+    recommendations = []
+
+    base = _strip_status(narr.get("proactive_support_narrative", ""))
+    alarm_sentence = ""
+    for sentence in re.split(r"(?<=[.!?])\s+", base):
+        if re.search(r"\balarm\b|service note", sentence, re.I):
+            alarm_sentence = sentence.strip()
+            break
+
+    ms = _series_for_comment(month_df, k.get("ms_col"))
+    cu = _series_for_comment(month_df, k.get("cu_col"))
+    _, _, ms_trend = _trend_split(ms)
+    _, _, cu_trend = _trend_split(cu)
+    corrosion_good = k.get("ms_mean") is not None and k.get("ms_mean") < 3.0 and k.get("cu_mean") is not None and k.get("cu_mean") < 0.5
+    if not corrosion_good or "increased" in (ms_trend, cu_trend):
+        _add_unique_recommendation(
+            recommendations,
+            "Confirm inhibitor residual, inspect for deposit activity, and compare corrosion movement with ORP and product trends.",
+            "corrosion",
+        )
+
+    trace = _series_for_comment(month_df, k.get("tp_col"))
+    cond = _series_for_comment(month_df, k.get("ec_col"))
+    _, _, trace_trend = _trend_split(trace)
+    _, _, cond_trend = _trend_split(cond)
+    recent_trace = _recent_series_for_comment(month_df, k.get("tp_col"))
+    recent_trace_deviation = _deviation_from_setpoint(recent_trace, k.get("tp_sp"))
+    trace_not_maintained = _control_not_maintained(k.get("tp_mean"), k.get("tp_ll"), k.get("tp_ul"), k.get("tp_pct"))
+    cond_not_maintained = _control_not_maintained(k.get("ec_mean"), k.get("ec_ll"), k.get("ec_ul"), k.get("ec_pct"))
+
+    if trace_not_maintained:
+        if cond_not_maintained:
+            if recent_trace_deviation is not None and recent_trace_deviation >= 20:
+                text = f"Traced Product deviation remained at about {_fmt_pct(recent_trace_deviation)} in the last 7 days, so correct the conductivity trend by checking cycles, blowdown, makeup, and dilution behavior before changing feed settings."
+            else:
+                text = "Traced Product was not maintained while conductivity was also not maintained, so treat the product issue as conductivity-related and check cycles, blowdown, makeup, and dilution behavior first."
+        elif trace_trend == "decreased":
+            text = "Traced Product was not maintained while conductivity was maintained, so verify product inventory, pump prime, feed delivery, and fluorometer calibration."
+        else:
+            text = "Traced Product was not maintained, so review product feed delivery, pump stroke, inventory, and fluorometer calibration."
+        _add_unique_recommendation(recommendations, text, "scale-product")
+
+    if cond_not_maintained:
+        if trace_not_maintained:
+            text = ""
+        elif cond_trend == "decreased":
+            text = "Conductivity decreased or stayed below range, so inspect excess blowdown, dilution, makeup changes, or water loss."
+        elif cond_trend == "increased":
+            text = "Conductivity increased or stayed above range, so inspect blowdown settings, higher cycles, evaporation concentration, or concentrated makeup."
+        else:
+            text = "Conductivity was not maintained, so inspect blowdown control, makeup conditions, and tower cycle stability."
+        _add_unique_recommendation(recommendations, text, "water-efficiency")
+
+    if coc and coc.get("mu_available") is False:
+        _add_unique_recommendation(
+            recommendations,
+            "Capture makeup water conductivity during the next service visit so actual cycles of concentration can be verified.",
+            "coc-makeup",
+        )
+    elif coc and coc.get("deviation_pct") is not None and coc.get("deviation_pct") > 20:
+        _add_unique_recommendation(
+            recommendations,
+            "Review makeup conductivity and blowdown control because cycles of concentration are still deviating from target.",
+            "coc-deviation",
+        )
+    if coc and coc.get("coc_gap") is not None and coc.get("coc_gap") >= 1.0:
+        _add_unique_recommendation(
+            recommendations,
+            "Actual cycles of concentration are more than 1.0 below target, so treat water efficiency as Critical and inspect for water loss, excess blowdown, or dilution.",
+            "coc-low-gap",
+        )
+
+    if k.get("frc") is None:
+        _add_unique_recommendation(
+            recommendations,
+            "Check FRC during the upcoming service visit to confirm oxidizing biocide residual.",
+            "frc",
+        )
+    if k.get("dipslide_cfu") is None:
+        _add_unique_recommendation(
+            recommendations,
+            "Measure dip-slide CFU during the upcoming service visit to confirm microbial control.",
+            "dipslide",
+        )
+    elif k.get("dipslide_cfu") >= 10_000:
+        _add_unique_recommendation(
+            recommendations,
+            "Review microbial control and adjust slug dosage duration if CFU remains elevated.",
+            "microbial-cfu",
+        )
+    if not k.get("relay_firing"):
+        _add_unique_recommendation(
+            recommendations,
+            "Verify biocide relay signal, pump operation, oxidizer inventory, and feed schedule.",
+            "biocide-relay",
+        )
+
+    if k.get("polymer_consumption_rate_pct") is not None:
+        _add_unique_recommendation(
+            recommendations,
+            "Verify phosphate and silica residuals during the next service visit.",
+            "polymer-residuals",
+        )
+
+    if not recommendations:
+        return alarm_sentence or "No unresolved performance recommendations were identified from the system health check, water efficiency, or product efficiency review. Continue routine monitoring."
+
+    rec_text = " ".join(text for _, text in recommendations)
+    if alarm_sentence:
+        return f"{alarm_sentence} Recommended follow-up: {rec_text}"
+    return f"Recommended follow-up: {rec_text}"
 
 
 def _chart_pattern_comment(kind, k, month_df):
@@ -277,23 +624,27 @@ def _chart_pattern_comment(kind, k, month_df):
         cu_mean = k.get("cu_mean")
         ms_status = "within" if ms_mean is not None and ms_mean < 3.0 else "outside"
         cu_status = "within" if cu_mean is not None and cu_mean < 0.5 else "outside"
+        corrosion_good = ms_status == "within" and cu_status == "within"
         return [
+            _pattern_line("corrosion control", "stable" if ms_trend == cu_trend == "stable" else "increased" if "increased" in (ms_trend, cu_trend) else "decreased" if "decreased" in (ms_trend, cu_trend) else "unknown", corrosion_good),
             f"Mild steel corrosion {_pattern_word(ms_trend)}, while copper corrosion {_pattern_word(cu_trend)}.",
-            f"The monthly averages were MS {_fmt_value(ms_mean, ' MPY', 3)} and Cu {_fmt_value(cu_mean, ' MPY', 3)} when data was available.",
             f"MS was {ms_status} the 3.0 MPY target, and Cu was {cu_status} the 0.5 MPY target.",
-            "The pattern should continue to be monitored for any sustained upward corrosion movement.",
+            _corrosion_reason(k, ms_trend, cu_trend, corrosion_good),
         ]
 
     if kind == "scale":
         trace = _series_for_comment(month_df, k.get("tp_col"))
         trace_start, trace_end, trace_trend = _trend_split(trace)
+        recent_trace = _recent_series_for_comment(month_df, k.get("tp_col"))
+        recent_deviation_pct = _deviation_from_setpoint(recent_trace, k.get("tp_sp"))
+        recent_in_range_pct = _pct_in_range_from_series(recent_trace, k.get("tp_ll"), k.get("tp_ul"))
         pct_range = _pct_in_range_from_series(trace, k.get("tp_ll"), k.get("tp_ul"))
         position = _position_text(k.get("tp_mean"), k.get("tp_ll"), k.get("tp_ul"), "Traced Product average")
         return [
-            f"Traced Product {_pattern_word(trace_trend)}.",
-            f"The trend moved from about {_fmt_value(trace_start, ' ppm')} at the start to {_fmt_value(trace_end, ' ppm')} at the end.",
+            _scale_pattern_summary(k, trace_trend, recent_deviation_pct, recent_in_range_pct),
+            _scale_recent_detail(recent_deviation_pct, trace_start, trace_end),
             f"{position} The monthly in-range performance was {_fmt_pct(pct_range)}.",
-            "This pattern indicates whether feed control is settling into the setpoint band or needs field review.",
+            _scale_reason(k, trace_trend, _trend_split(_series_for_comment(month_df, k.get("ec_col")))[2]),
         ]
 
     if kind == "orp_corrosion":
@@ -301,12 +652,14 @@ def _chart_pattern_comment(kind, k, month_df):
         cu = _series_for_comment(month_df, k.get("cu_col"))
         _, _, orp_trend = _trend_split(orp)
         _, _, cu_trend = _trend_split(cu)
-        spike_text = "ORP showed a visible spike response pattern" if len(orp) and orp.max() > orp.median() + 200 else "ORP did not show a strong spike response pattern"
+        spike_visible = len(orp) and orp.max() > orp.median() + 200
+        spike_text = "ORP showed a visible spike response pattern" if spike_visible else "ORP did not show a strong spike response pattern"
+        cu_good = k.get("cu_mean") is not None and k.get("cu_mean") < 0.5
         return [
-            f"{spike_text} during the month.",
-            f"The ORP pattern {_pattern_word(orp_trend)} without using absolute ORP values.",
+            _pattern_line("ORP response", orp_trend, None),
+            f"{spike_text} during the month without relying on absolute ORP values.",
             f"Copper corrosion {_pattern_word(cu_trend)} while the ORP pattern changed.",
-            "This pattern helps confirm whether biocide response is consistent without creating a corrosion upset.",
+            _orp_reason(spike_visible, cu_good),
         ]
 
     if kind == "biocide_corrosion":
@@ -314,51 +667,32 @@ def _chart_pattern_comment(kind, k, month_df):
         cu = _series_for_comment(month_df, k.get("cu_col"))
         _, _, relay_trend = _trend_split(relay)
         _, _, cu_trend = _trend_split(cu)
-        relay_text = "Biocide relay activity was present" if len(relay) and relay.mean() > 0.01 else "Biocide relay activity was limited or not visible"
+        relay_visible = len(relay) and relay.mean() > 0.01
+        relay_text = "Biocide relay activity was present" if relay_visible else "Biocide relay activity was limited or not visible"
+        cu_good = k.get("cu_mean") is not None and k.get("cu_mean") < 0.5
         return [
+            _pattern_line("biocide feed versus copper corrosion", cu_trend, cu_good),
             f"{relay_text} in the monthly trend.",
             f"Relay activity {_pattern_word(relay_trend)} when the month is split into early and late periods.",
-            f"Copper corrosion {_pattern_word(cu_trend)} during the same period.",
-            "The pattern should be reviewed with service observations to confirm feed timing and corrosion stability.",
+            _biocide_reason(relay_visible, cu_good),
         ]
 
     if kind == "conductivity":
         cond = _series_for_comment(month_df, k.get("ec_col"))
+        trace = _series_for_comment(month_df, k.get("tp_col"))
         cond_start, cond_end, cond_trend = _trend_split(cond)
+        _, _, trace_trend = _trend_split(trace)
         pct_range = _pct_in_range_from_series(cond, k.get("ec_ll"), k.get("ec_ul"))
         position = _position_text(k.get("ec_mean"), k.get("ec_ll"), k.get("ec_ul"), "conductivity average")
+        cond_good = _mean_within_range(k.get("ec_mean"), k.get("ec_ll"), k.get("ec_ul"))
         return [
-            f"Conductivity {_pattern_word(cond_trend)}.",
-            f"The trend moved from about {_fmt_value(cond_start, ' uS/cm')} at the start to {_fmt_value(cond_end, ' uS/cm')} at the end.",
+            _pattern_line("conductivity", cond_trend, cond_good),
+            f"The trend moved from about {_fmt_value(cond_start, ' µS/cm')} at the start to {_fmt_value(cond_end, ' µS/cm')} at the end.",
             f"{position} The monthly in-range performance was {_fmt_pct(pct_range)}.",
-            "This pattern indicates whether cycles, makeup, blowdown, or dilution behavior needs follow-up.",
+            _conductivity_reason(k, cond_trend, trace_trend),
         ]
 
     return []
-
-
-def _ade_residual_status(ade, trend_date):
-    if trend_date is None:
-        trend_date = pd.Timestamp.min
-    found = {"phosphate": False, "silica": False}
-    for row in ade:
-        parameter = str(row.get("Parameter", "")).lower()
-        value = row.get("Value")
-        if value in (None, "", "NULL"):
-            continue
-        row_date = pd.to_datetime(row.get("CreatedDateTime") or row.get("CreatedDate"), errors="coerce")
-        if pd.notna(row_date) and row_date < trend_date:
-            continue
-        if "phosphate" in parameter or "po4" in parameter or "ortho" in parameter:
-            found["phosphate"] = True
-        if "silica" in parameter or "sio2" in parameter:
-            found["silica"] = True
-    missing = [name for name, exists in found.items() if not exists]
-    if not missing:
-        return "ADE phosphate and silica residuals were entered on or after the date the increasing polymer consumption trend was noticed."
-    if len(missing) == 2:
-        return "ADE phosphate and silica residuals were not available on or after the date the increasing polymer consumption trend was noticed and will be measured during the upcoming service visit."
-    return f"ADE {missing[0]} residual was not available on or after the date the increasing polymer consumption trend was noticed and will be measured during the upcoming service visit."
 
 
 def _scale_control_comment(k, ade, month_df, ts_col):
@@ -404,6 +738,7 @@ def _scale_control_comment(k, ade, month_df, ts_col):
 
     cond_trend = "unknown"
     cond_position = "unknown"
+    cond_in_range_pct = k.get("ec_pct")
     if cond_col and cond_col in frame.columns:
         cond = frame[cond_col].dropna()
         _, _, cond_trend = _trend_split(cond) if len(cond) >= 4 else (None, None, "unknown")
@@ -418,40 +753,51 @@ def _scale_control_comment(k, ade, month_df, ts_col):
                 cond_position = "maintained_in_range"
 
     notes = [
-        f"Traced Product was within the Controller Setpoint control range for {in_range_pct:.1f}% of the reporting month."
+        f"Traced Product was within the recommended range for {in_range_pct:.1f}% of the reporting month."
         if in_range_pct is not None else
         "Traced Product in-range performance could not be calculated for this reporting month."
     ]
 
     polymer_rate = None
-    trace_higher_than_tag_pct = None
+    polymer_consumption_increase_pct = None
     if tag_col and tag_col in frame.columns:
         polymer_frame = frame[[trace_col, tag_col]].dropna()
         polymer_frame = polymer_frame[polymer_frame[trace_col] > 0]
         if not polymer_frame.empty:
             polymer_rate = (polymer_frame[trace_col] - polymer_frame[tag_col]) / polymer_frame[trace_col] * 100
-            trace_higher_than_tag_pct = round(float((polymer_frame[trace_col] > polymer_frame[tag_col]).mean() * 100), 1)
-            k["polymer_consumption_rate_pct"] = round(float(polymer_rate.mean()), 1)
-            rate_chunk_size = max(len(polymer_rate) // 4, 1)
-            rate_start = float(polymer_rate.iloc[:rate_chunk_size].mean())
-            rate_end = float(polymer_rate.iloc[-rate_chunk_size:].mean())
-            if rate_end > rate_start:
-                rate_direction = "increased"
-            elif rate_end < rate_start:
-                rate_direction = "decreased"
+            if float(polymer_frame[trace_col].mean()) > float(polymer_frame[tag_col].mean()):
+                polymer_display_rate = _polymer_consumption_display_rates(polymer_rate)
+                k["polymer_consumption_rate_pct"] = round(float(polymer_display_rate.mean()), 1)
+                rate_chunk_size = max(len(polymer_display_rate) // 4, 1)
+                rate_start = float(polymer_display_rate.iloc[:rate_chunk_size].mean())
+                rate_end = float(polymer_display_rate.iloc[-rate_chunk_size:].mean())
+                polymer_consumption_increase_pct = rate_end - rate_start
+                if rate_end > rate_start:
+                    rate_direction = "increased"
+                elif rate_end < rate_start:
+                    rate_direction = "decreased"
+                else:
+                    rate_direction = "remained stable"
+                notes.append(
+                    f"Polymer consumption rate averaged {_fmt_pct(k['polymer_consumption_rate_pct'])} and "
+                    f"{rate_direction} from {_fmt_pct(rate_start)} at the start of the month "
+                    f"to {_fmt_pct(rate_end)} at the end of the month."
+                )
             else:
-                rate_direction = "remained stable"
-            notes.append(
-                f"Polymer consumption rate averaged {_fmt_pct(k['polymer_consumption_rate_pct'])} and "
-                f"{rate_direction} from {_fmt_pct(rate_start)} at the start of the month "
-                f"to {_fmt_pct(rate_end)} at the end of the month."
-            )
+                k["polymer_consumption_rate_pct"] = None
     else:
         k["polymer_consumption_rate_pct"] = None
 
     initial_high_later_maintained = initial_high >= 50 and final_in_range >= 75
     initial_high_later_improved = initial_high >= 50 and final_in_range > initial_in_range and not initial_high_later_maintained
     initial_good_later_changed = initial_in_range >= 75 and final_in_range < 75
+    trace_not_maintained = _control_not_maintained(k.get("tp_mean"), k.get("tp_ll"), k.get("tp_ul"), in_range_pct)
+    cond_not_maintained = _control_not_maintained(k.get("ec_mean"), k.get("ec_ll"), k.get("ec_ul"), cond_in_range_pct)
+
+    if cond_in_range_pct is not None:
+        notes.append(
+            f"Conductivity was within the recommended range for {cond_in_range_pct:.1f}% of the reporting month."
+        )
 
     if initial_high_later_maintained:
         notes.append(
@@ -469,7 +815,10 @@ def _scale_control_comment(k, ade, month_df, ts_col):
             elif cond_position == "low" or cond_trend == "decreased":
                 notes.append("Product control was good initially and then decreased along with conductivity, indicating water loss in the system; this will be inspected during the upcoming service visit.")
         elif final_high >= 50 or trace_trend == "increased":
-            notes.append("Product control was good initially and then increased later in the month, so the feed control settings and fluorometer calibration should be reviewed during the upcoming service visit.")
+            if trace_not_maintained and cond_not_maintained:
+                notes.append("Product control was good initially and then increased while conductivity was not maintained, indicating the Traced Product trend is related to the conductivity trend; cycles, blowdown, makeup, or dilution behavior should be inspected during the upcoming service visit.")
+            else:
+                notes.append("Product control was good initially and then increased later in the month, so the feed control settings and fluorometer calibration should be reviewed during the upcoming service visit.")
 
     if final_trace_above_setpoint_pct is not None and final_trace_above_setpoint_pct > 0:
         if final_trace_above_setpoint_pct <= 5:
@@ -477,27 +826,22 @@ def _scale_control_comment(k, ade, month_df, ts_col):
                 "The end-of-month traced product deviation from setpoint is minimal, so the control logic will be optimised."
             )
         else:
-            notes.append(
-                f"End-of-month Traced Product was {final_trace_above_setpoint_pct:.1f}% higher than the setpoint, so the pump stroke will be reduced during the upcoming service visit."
-            )
-
-    if trace_higher_than_tag_pct is not None and trace_higher_than_tag_pct >= 90:
-        if polymer_rate is None:
-            rate_early, rate_late, rate_trend = None, None, "unknown"
-        else:
-            rate_early, rate_late, rate_trend = _trend_split(polymer_rate)
-        if rate_trend == "increased":
-            trend_date = frame.iloc[len(frame) // 2][ts_col]
-            notes.append(
-                f"Traced Product was higher than Tagged Polymer for {trace_higher_than_tag_pct:.1f}% of the month. "
-                f"The calculated polymer consumption rate increased from {_fmt_pct(rate_early)} early in the month to {_fmt_pct(rate_late)} later in the month, so scale control needs attention."
-            )
-            notes.append(_ade_residual_status(ade, trend_date))
-            if cond_trend == "increased":
-                notes.append("Conductivity and polymer consumption increased together, indicating the change is due to an increase in cycles of concentration.")
+            if trace_not_maintained and cond_not_maintained:
+                notes.append(
+                    f"End-of-month Traced Product was {final_trace_above_setpoint_pct:.1f}% higher than the setpoint, and conductivity was also not maintained, so the product trend should be treated as conductivity-related until cycles, blowdown, makeup, or dilution behavior is corrected."
+                )
+            else:
+                notes.append(
+                    f"End-of-month Traced Product was {final_trace_above_setpoint_pct:.1f}% higher than the setpoint, so the pump stroke will be reduced during the upcoming service visit."
+                )
 
     if cond_position == "low" or cond_trend == "decreased":
         notes.append("Conductivity was below its setpoint configuration range for most of the same period, so water loss, dilution, or blowdown/makeup behavior should be inspected during the upcoming service visit.")
+    elif cond_position == "maintained_in_range":
+        notes.append("Conductivity remained stable and maintained within its setpoint configuration range, so the Traced Product deviation is not linked to water loss or dilution and should be addressed through product control optimisation.")
+
+    if polymer_consumption_increase_pct is not None and polymer_consumption_increase_pct > 5:
+        notes.append("Because polymer consumption increased by more than 5%, phosphate residual will be checked during the upcoming service visit.")
 
     return " ".join(notes)
 
@@ -588,6 +932,8 @@ def compute_kpis(scc, ade, service_notes, month_df, ts_col):
     k["micro_status"] = STATUS_EXCELLENT if k["frc"] and k["frc"]>=0.2 else STATUS_ACCEPTABLE
     k["dipslide_cfu"] = _find_dipslide_cfu(ade, service_notes)
     k["dipslide_comment"] = dipslide_comment(k["dipslide_cfu"])
+    k["orp_spike_summary"] = _orp_spike_summary(month_df, ts_col, orp_col)
+    k["good_microbial_dosage"] = k["orp_spike_summary"]["good_dosage"]
     k["relay_firing"] = rel_col is not None and series(rel_col).mean() > 0.01
 
     return k
@@ -601,7 +947,8 @@ def compute_coc(k, mu_cond):
     Actual COC = monthly average conductivity / MU conductivity
     Deviation %  = abs(Actual - Target) / Target * 100
 
-    Status thresholds (based on % deviation from target):
+    Status thresholds (based on % deviation from target, with low-COC override):
+    Critical  : actual COC is at least 1.0 below target COC
     Excellent : deviation <= 20%
     Acceptable: 20% < deviation <= 50%
     Critical  : deviation > 50%
@@ -616,9 +963,12 @@ def compute_coc(k, mu_cond):
     target_coc = (k["ec_sp"] / mu_cond) if k["ec_sp"] else None
     actual_coc = (k["ec_mean"] / mu_cond) if k["ec_mean"] else None
 
+    coc_gap = None
     if target_coc and actual_coc:
+        coc_gap = target_coc - actual_coc
         dev = abs(actual_coc - target_coc) / target_coc * 100
-        if   dev <= 20: coc_status = STATUS_EXCELLENT
+        if   coc_gap >= 1.0: coc_status = STATUS_CRITICAL
+        elif dev <= 20: coc_status = STATUS_EXCELLENT
         elif dev <= 50: coc_status = STATUS_ACCEPTABLE
         else:           coc_status = STATUS_CRITICAL
     else:
@@ -628,6 +978,7 @@ def compute_coc(k, mu_cond):
         "mu_available": True, "mu_cond": round(mu_cond, 2),
         "target_coc": round(target_coc, 2) if target_coc else None,
         "actual_coc": round(actual_coc, 2) if actual_coc else None,
+        "coc_gap": round(coc_gap, 2) if coc_gap is not None else None,
         "deviation_pct": round(dev, 1) if dev is not None else None,
         "coc_status": coc_status,
     }
@@ -888,6 +1239,22 @@ def _strip_status(text):
                   "", text, flags=re.IGNORECASE).strip()
 
 
+def _strip_polymer_consumption(text):
+    if not text:
+        return text
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    return " ".join(sentence for sentence in sentences if "polymer consumption" not in sentence.lower()).strip()
+
+
+def _corrosion_narrative(k):
+    return (
+        f"During the reporting period, the system remained under good control. "
+        f"The mild steel and copper corrosion rates averaged {_fmt_value(k.get('ms_mean'), ' mpy', 2)} "
+        f"and {_fmt_value(k.get('cu_mean'), ' mpy', 2)}, respectively, both of which are well within "
+        f"the recommended limits of <5 mpy and <0.5 mpy."
+    )
+
+
 def add_h1(doc, text):
     p = doc.add_paragraph()
     p.paragraph_format.space_before=Pt(14); p.paragraph_format.space_after=Pt(4)
@@ -1036,7 +1403,7 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
     # ── Corrosion Control ─────────────────────────────────────────────────────
     add_h3(doc,"Corrosion Control")
     add_status(doc, k["corr_status"])
-    add_para(doc, _strip_status(narr.get("corrosion_narrative","")))
+    add_para(doc, _corrosion_narrative(k))
 
     # ── Scale Control ─────────────────────────────────────────────────────────
     add_h3(doc,"Scale Control")
@@ -1049,8 +1416,7 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
     # ── Microbial Control ─────────────────────────────────────────────────────
     add_h3(doc,"Microbial Control")
     add_status(doc, k["micro_status"])
-    add_para(doc, _strip_status(narr.get("microbial_narrative","")))
-    add_para(doc, k.get("dipslide_comment", dipslide_comment(None)))
+    add_para(doc, microbial_control_comment(k))
 
     # ── Water Efficiency ──────────────────────────────────────────────────────
     add_h2(doc,"Water Efficiency")
@@ -1067,6 +1433,10 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
               f"{coc['deviation_pct']}%" if coc['deviation_pct'] is not None else "N/A",
               cs]],
             [3.4, 3.4, 3.4, 3.4, 3.4])
+        if coc.get("coc_gap") is not None and coc.get("coc_gap") >= 1.0:
+            add_para(doc,
+                "Actual COC is more than 1.0 below target COC, so this is Critical and needs attention because there can be water loss, excess blowdown, or dilution.",
+                size=10)
         add_para(doc, _strip_status(narr.get("water_efficiency_narrative","")))
     else:
         add_para(doc,
@@ -1079,11 +1449,12 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
     # ── Product Efficiency ────────────────────────────────────────────────────
     add_h2(doc,"Product Efficiency")
     add_status(doc, k["tp_status"])
-    add_para(doc, _strip_status(narr.get("product_efficiency_narrative","")))
+    product_efficiency_text = _strip_polymer_consumption(_strip_status(narr.get("product_efficiency_narrative", "")))
+    add_para(doc, product_efficiency_text)
 
     # ── Proactive System Support ──────────────────────────────────────────────
     add_h2(doc,"Proactive System Support")
-    add_para(doc, _strip_status(narr.get("proactive_support_narrative","")))
+    add_para(doc, _proactive_support_summary(k, narr, coc, month_df))
     doc.add_page_break()
 
     # ══════════════════════════════════════════════════════════════════════════
