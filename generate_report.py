@@ -11,7 +11,7 @@ then assembles the Word document: chart first, then AI narrative below it.
 USAGE:
     python generate_report.py --site "Synthomer Chester SC (US)" --month "May 2026"
 """
-import argparse, json, re, sys, zipfile
+import argparse, difflib, json, re, sys, zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -37,6 +37,9 @@ OUTPUT_DIR = ROOT / "output"
 CHARTS_DIR = OUTPUT_DIR / "charts"
 OUTPUT_DIR.mkdir(exist_ok=True)
 CHARTS_DIR.mkdir(exist_ok=True)
+WATER_LOSS_THRESHOLD_PCT = 3.0
+SETPOINT_MAINTAINED_TOLERANCE_PCT = 3.0
+CELL_FOULING_THRESHOLD_PCT = 30.0
 
 GREEN = RGBColor(0x00,0x85,0x7C); WHITE = RGBColor(0xFF,0xFF,0xFF)
 AMBER = RGBColor(0xB8,0x86,0x0B); RED   = RGBColor(0xC0,0x00,0x00)
@@ -69,6 +72,144 @@ def _load_mu_conductivity(site):
     except Exception as e:
         print(f"  [WARN] Could not read MU_conductivity.xlsx: {e}")
     return None
+
+
+def _normal_key(value):
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _float_or_none(value):
+    try:
+        return float(value) if value not in (None, "NULL", "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_water_efficiency_inputs(site, controllers):
+    """Read value-creation water-efficiency rows for the current report scope."""
+    value_file = ROOT / "data" / "Value creation.xlsx"
+    if not value_file.exists():
+        return []
+
+    controller_ids = {
+        _normal_key(controller.get("SerialNumber"))
+        for controller in controllers
+        if controller.get("SerialNumber")
+    }
+    site_key = _normal_key(site)
+    records = []
+
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(value_file, data_only=True)
+        ws = wb["Water Efficiency"] if "Water Efficiency" in wb.sheetnames else wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            return []
+        headers = [_normal_key(header) for header in rows[0]]
+
+        def col(*names):
+            wanted = {_normal_key(name) for name in names}
+            return next((idx for idx, header in enumerate(headers) if header in wanted), None)
+
+        idx_controller = col("Controller Id", "Controller ID")
+        idx_site = col("Site Name")
+        idx_system = col("System Name")
+        idx_target = col("Potential CT Cycles", "Target COC")
+        idx_temp = col("Delta T ( F)", "Delta T (F)", "Temperature")
+        idx_recirculation = col("Recirculation Rate (gpm)", "Recirculation Rate")
+        idx_hours = col("Operating hours", "Operating Hours")
+
+        all_records = []
+        for row in rows[1:]:
+            record = {
+                "controller_id": str(row[idx_controller]).strip() if idx_controller is not None and row[idx_controller] else "",
+                "site_name": str(row[idx_site]).strip() if idx_site is not None and row[idx_site] else "",
+                "system_name": str(row[idx_system]).strip() if idx_system is not None and row[idx_system] else "",
+                "target_coc": _float_or_none(row[idx_target]) if idx_target is not None else None,
+                "temperature": _float_or_none(row[idx_temp]) if idx_temp is not None else None,
+                "recirculation_rate": _float_or_none(row[idx_recirculation]) if idx_recirculation is not None else None,
+                "operating_hours": _float_or_none(row[idx_hours]) if idx_hours is not None else None,
+            }
+            if record["target_coc"] and record["temperature"] is not None and record["recirculation_rate"]:
+                all_records.append(record)
+
+        exact_matches = [
+            record for record in all_records
+            if record["controller_id"] and _normal_key(record["controller_id"]) in controller_ids
+        ]
+        if exact_matches:
+            return exact_matches
+
+        site_matches = [record for record in all_records if _normal_key(record["site_name"]) == site_key]
+        if site_matches:
+            return site_matches
+
+        fuzzy_matches = []
+        for record in all_records:
+            workbook_site_key = _normal_key(record["site_name"])
+            if difflib.SequenceMatcher(None, site_key, workbook_site_key).ratio() >= 0.78:
+                fuzzy_matches.append(record)
+        return fuzzy_matches
+    except Exception as e:
+        print(f"  [WARN] Could not read Value creation.xlsx water efficiency data: {e}")
+    return records
+
+
+def compute_water_loss(coc, water_efficiency_inputs):
+    """Calculate annual water loss and cost when current COC is below target."""
+    current_coc = coc.get("actual_coc") if coc else None
+    if current_coc is None or current_coc <= 1:
+        return {"available": False, "triggered": False, "reason": "Current COC is not available or is <= 1."}
+
+    rows = []
+    for record in water_efficiency_inputs:
+        target_coc = record.get("target_coc")
+        recirculation_rate = record.get("recirculation_rate")
+        temperature = record.get("temperature")
+        operating_hours = record.get("operating_hours") or 24.0
+        if not target_coc or target_coc <= 1 or not recirculation_rate or temperature is None:
+            continue
+        decrease_pct = (target_coc - current_coc) / target_coc * 100
+        if decrease_pct <= WATER_LOSS_THRESHOLD_PCT:
+            continue
+        evaporation_rate = 0.85 * recirculation_rate / 1000 * temperature
+        current_makeup = evaporation_rate * current_coc / (current_coc - 1)
+        potential_makeup = evaporation_rate * target_coc / (target_coc - 1)
+        current_blowdown = evaporation_rate / (current_coc - 1)
+        potential_blowdown = evaporation_rate / (target_coc - 1)
+        current_makeup_per_day = current_makeup * 60 * operating_hours
+        potential_makeup_per_day = potential_makeup * 60 * operating_hours
+        water_savings_per_day = current_makeup_per_day - potential_makeup_per_day
+        water_savings_per_annum = water_savings_per_day * 365
+        rows.append({
+            **record,
+            "decrease_pct": decrease_pct,
+            "evaporation_rate": evaporation_rate,
+            "current_makeup": current_makeup,
+            "potential_makeup": potential_makeup,
+            "current_blowdown": current_blowdown,
+            "potential_blowdown": potential_blowdown,
+            "current_makeup_per_day": current_makeup_per_day,
+            "potential_makeup_per_day": potential_makeup_per_day,
+            "water_savings_per_day": water_savings_per_day,
+            "water_savings_per_annum": water_savings_per_annum,
+            "water_savings_cost": water_savings_per_annum / 100 * 5,
+        })
+
+    if not water_efficiency_inputs:
+        return {"available": False, "triggered": False, "reason": "Value creation water-efficiency data is not available."}
+    if not rows:
+        return {"available": True, "triggered": False, "reason": f"Current COC is not more than {WATER_LOSS_THRESHOLD_PCT:g}% below the value-creation Target COC."}
+
+    return {
+        "available": True,
+        "triggered": True,
+        "current_coc": current_coc,
+        "rows": rows,
+        "water_savings_per_annum": sum(row["water_savings_per_annum"] for row in rows),
+        "water_savings_cost": sum(row["water_savings_cost"] for row in rows),
+    }
 
 
 def load_all(site, month, controller_ids=None):
@@ -275,6 +416,12 @@ def _fmt_value(value, unit="", decimals=1):
     return f"{value:.{decimals}f}{unit}"
 
 
+def _fmt_number(value, decimals=0):
+    if value is None:
+        return "N/A"
+    return f"{value:,.{decimals}f}"
+
+
 def _trend_split(values, threshold=0.01):
     if values is None or len(values) < 4:
         return None, None, "unknown"
@@ -325,6 +472,11 @@ def _series_for_comment(month_df, col):
     if col is None or col not in month_df.columns:
         return pd.Series(dtype=float)
     return pd.to_numeric(month_df[col], errors="coerce").dropna()
+
+
+def _cell_fouling_above_threshold(k, month_df, threshold=CELL_FOULING_THRESHOLD_PCT):
+    values = _series_for_comment(month_df, k.get("cf_col"))
+    return not values.empty and float(values.max()) > threshold
 
 
 def _pct_in_range_from_series(values, lower, upper):
@@ -494,10 +646,130 @@ def _conductivity_reason(k, cond_trend, trace_trend):
     return "Likely reason: makeup and blowdown control are balanced, so tower cycles remained steady."
 
 
+def _last_day_conductivity_status(k, month_df):
+    cond_col = k.get("ec_col")
+    ts_col = _timestamp_col(month_df)
+    result = {
+        "available": False,
+        "maintained": False,
+        "mean": None,
+        "date": None,
+        "criterion": "configured conductivity setpoint",
+    }
+    if not cond_col or cond_col not in month_df.columns:
+        return result
+
+    frame = month_df[[cond_col] + ([ts_col] if ts_col else [])].copy()
+    frame[cond_col] = pd.to_numeric(frame[cond_col], errors="coerce")
+    frame = frame.dropna(subset=[cond_col])
+    if frame.empty:
+        return result
+    if ts_col:
+        frame[ts_col] = pd.to_datetime(frame[ts_col], errors="coerce")
+        frame = frame.dropna(subset=[ts_col]).sort_values(ts_col)
+        if frame.empty:
+            return result
+        last_date = frame[ts_col].max().date()
+        last_day = frame.loc[frame[ts_col].dt.date == last_date, cond_col].dropna()
+        result["date"] = last_date.isoformat()
+    else:
+        last_day = frame[cond_col].tail(max(len(frame) // 30, 1)).dropna()
+    if last_day.empty:
+        return result
+
+    last_mean = float(last_day.mean())
+    result["available"] = True
+    result["mean"] = last_mean
+    if k.get("ec_ll") is not None and k.get("ec_ul") is not None:
+        result["maintained"] = k["ec_ll"] <= last_mean <= k["ec_ul"]
+        result["criterion"] = f"{k['ec_ll']:.0f}-{k['ec_ul']:.0f} µS/cm"
+    elif k.get("ec_sp"):
+        deviation_pct = abs(last_mean - k["ec_sp"]) / k["ec_sp"] * 100
+        result["maintained"] = deviation_pct <= SETPOINT_MAINTAINED_TOLERANCE_PCT
+        result["criterion"] = f"{k['ec_sp']:.0f} µS/cm setpoint (+/-{SETPOINT_MAINTAINED_TOLERANCE_PCT:g}%)"
+    return result
+
+
+def _water_efficiency_status(k, coc, water_loss, month_df):
+    if water_loss.get("triggered"):
+        last_day = _last_day_conductivity_status(k, month_df)
+        return STATUS_ACCEPTABLE if last_day.get("maintained") else STATUS_CRITICAL
+    return coc.get("coc_status") or k.get("ec_status") or STATUS_ACCEPTABLE
+
+
+def _conductivity_setpoint_text(k):
+    if k.get("ec_ll") is not None and k.get("ec_ul") is not None:
+        return f"the recommended setpoint range of {k['ec_ll']:.0f}-{k['ec_ul']:.0f} µS/cm"
+    if k.get("ec_sp"):
+        return f"the recommended setpoint of {k['ec_sp']:.0f} µS/cm"
+    return "the recommended conductivity setpoint"
+
+
+def _conductivity_position_text(k):
+    mean = k.get("ec_mean")
+    if mean is None:
+        return "could not be compared because conductivity data was not available"
+    if k.get("ec_ll") is not None and k.get("ec_ul") is not None:
+        if mean < k["ec_ll"]:
+            return "below"
+        if mean > k["ec_ul"]:
+            return "above"
+        return "within"
+    if k.get("ec_sp"):
+        deviation_pct = abs(mean - k["ec_sp"]) / k["ec_sp"] * 100
+        if deviation_pct <= SETPOINT_MAINTAINED_TOLERANCE_PCT:
+            return "within"
+        return "below" if mean < k["ec_sp"] else "above"
+    return "compared against"
+
+
+def _water_efficiency_comment(k, month_df, water_loss):
+    cond = _series_for_comment(month_df, k.get("ec_col"))
+    cond_start, cond_end, cond_trend = _trend_split(cond)
+    trace_trend = _trend_split(_series_for_comment(month_df, k.get("tp_col")))[2]
+    avg_text = _fmt_value(k.get("ec_mean"), " µS/cm", 1)
+    position = _conductivity_position_text(k)
+    setpoint_text = _conductivity_setpoint_text(k)
+
+    if cond_trend == "decreased":
+        pattern = f"Conductivity decreased from about {_fmt_value(cond_start, ' µS/cm', 1)} at the start of the month to {_fmt_value(cond_end, ' µS/cm', 1)} at the end."
+    elif cond_trend == "increased":
+        pattern = f"Conductivity increased from about {_fmt_value(cond_start, ' µS/cm', 1)} at the start of the month to {_fmt_value(cond_end, ' µS/cm', 1)} at the end."
+    elif cond_trend == "stable":
+        pattern = f"Conductivity remained broadly stable from about {_fmt_value(cond_start, ' µS/cm', 1)} at the start of the month to {_fmt_value(cond_end, ' µS/cm', 1)} at the end."
+    else:
+        pattern = "Conductivity did not show a clear month-long increase or decrease pattern."
+
+    recommendations = []
+    if water_loss.get("triggered"):
+        last_day = _last_day_conductivity_status(k, month_df)
+        if last_day.get("maintained"):
+            recommendations.append(
+                f"Water loss was observed from the COC gap, but last-day conductivity averaged {_fmt_value(last_day.get('mean'), ' µS/cm', 1)} and was maintained at {last_day.get('criterion')}; continue monitoring blowdown and makeup stability."
+            )
+        else:
+            last_day_text = _fmt_value(last_day.get("mean"), " µS/cm", 1) if last_day.get("available") else "not available"
+            recommendations.append(
+                f"Water loss was observed from the COC gap and last-day conductivity was {last_day_text}, so inspect blowdown valve operation, makeup changes, dilution sources, and possible water loss."
+            )
+    else:
+        recommendations.append(_conductivity_reason(k, cond_trend, trace_trend).replace("Likely reason: ", "Recommendation: "))
+
+    return " ".join([
+        f"The average conductivity is {avg_text}, which is {position} {setpoint_text}.",
+        pattern,
+        *recommendations,
+    ])
+
+
 def _add_unique_recommendation(recommendations, text, key):
     if not text or key in {item[0] for item in recommendations}:
         return
     recommendations.append((key, text))
+
+
+def _is_empty_service_note_sentence(sentence):
+    return bool(re.search(r"\bno\s+service\s+notes?\s+(?:were\s+)?(?:recorded|found)\b", sentence, re.I))
 
 
 def _proactive_support_summary(k, narr, coc, month_df):
@@ -506,6 +778,8 @@ def _proactive_support_summary(k, narr, coc, month_df):
     base = _strip_status(narr.get("proactive_support_narrative", ""))
     alarm_sentence = ""
     for sentence in re.split(r"(?<=[.!?])\s+", base):
+        if _is_empty_service_note_sentence(sentence):
+            continue
         if re.search(r"\balarm\b|service note", sentence, re.I):
             alarm_sentence = sentence.strip()
             break
@@ -614,25 +888,156 @@ def _proactive_support_summary(k, narr, coc, month_df):
     return f"Recommended follow-up: {rec_text}"
 
 
+def _trace_product_low_then_maintained_comment(k, month_df):
+    trace_col = k.get("tp_col")
+    setpoint = k.get("tp_sp")
+    ts_col = _timestamp_col(month_df)
+    if not trace_col or trace_col not in month_df.columns or not setpoint or not ts_col:
+        return None
+
+    frame = month_df[[ts_col, trace_col]].copy()
+    frame[ts_col] = pd.to_datetime(frame[ts_col], errors="coerce")
+    frame[trace_col] = pd.to_numeric(frame[trace_col], errors="coerce")
+    frame = frame.dropna(subset=[ts_col, trace_col]).sort_values(ts_col)
+    if frame.empty:
+        return None
+
+    daily = frame.set_index(ts_col)[trace_col].resample("1D").mean().dropna()
+    if len(daily) < 4:
+        return None
+
+    if k.get("tp_ll") is not None and k.get("tp_ul") is not None:
+        maintained = (daily >= k["tp_ll"]) & (daily <= k["tp_ul"])
+        low = daily < k["tp_ll"]
+    else:
+        maintained = daily >= float(setpoint) * 0.90
+        low = daily < float(setpoint) * 0.90
+
+    if not bool(low.iloc[0]) or not bool(maintained.tail(max(3, len(maintained) // 4)).all()):
+        return None
+
+    maintained_positions = [idx for idx, ok in enumerate(maintained) if ok]
+    if not maintained_positions:
+        return None
+    first_maintained_index = maintained_positions[0]
+    if first_maintained_index == 0:
+        return None
+    low_period = daily.iloc[:first_maintained_index]
+    if low_period.empty or not bool((low_period < float(setpoint) * 0.90).any()):
+        return None
+
+    low_until = low_period.index[-1]
+    low_days = len(low_period)
+    return (
+        f"The Traced Product level was maintained below the setpoint until {low_until.strftime('%d %B %Y')}. "
+        f"Later, the Traced Product level was well maintained at the setpoint of {setpoint:.1f} ppm. "
+        f"The low Traced Product during the first {low_days} days can be due to lack of inventory, dosing pump lost prime, or a leak in the pump discharge line."
+    )
+
+
+def _format_date_range(start, end):
+    start_text = pd.Timestamp(start).strftime("%d %B %Y")
+    end_text = pd.Timestamp(end).strftime("%d %B %Y")
+    return start_text if start_text == end_text else f"{start_text} to {end_text}"
+
+
+def _true_date_ranges(mask):
+    ranges = []
+    active_start = None
+    previous_date = None
+    for date, is_active in mask.items():
+        if bool(is_active) and active_start is None:
+            active_start = date
+        elif not bool(is_active) and active_start is not None:
+            ranges.append((active_start, previous_date))
+            active_start = None
+        previous_date = date
+    if active_start is not None and previous_date is not None:
+        ranges.append((active_start, previous_date))
+    return ranges
+
+
+def _trace_low_mask(k, daily_trace):
+    if daily_trace.empty:
+        return daily_trace.astype(bool)
+    if k.get("tp_ll") is not None:
+        return daily_trace < k["tp_ll"]
+    if k.get("tp_sp"):
+        return daily_trace < float(k["tp_sp"]) * 0.90
+    return daily_trace < daily_trace.mean()
+
+
+def _orp_copper_corrosion_comment(k, month_df):
+    ts_col = _timestamp_col(month_df)
+    orp_col = k.get("orp_col")
+    cu_col = k.get("cu_col")
+    trace_col = k.get("tp_col")
+    comments = []
+
+    if ts_col and orp_col and orp_col in month_df.columns:
+        orp_frame = month_df[[ts_col, orp_col]].copy()
+        orp_frame[ts_col] = pd.to_datetime(orp_frame[ts_col], errors="coerce")
+        orp_frame[orp_col] = pd.to_numeric(orp_frame[orp_col], errors="coerce")
+        orp_frame = orp_frame.dropna(subset=[ts_col, orp_col]).sort_values(ts_col)
+        if not orp_frame.empty:
+            hourly_orp = orp_frame.set_index(ts_col)[orp_col].resample("1h").mean().dropna()
+            weekly_spikes = (hourly_orp.diff() >= 50).resample("7D", origin="start_day").sum()
+            if not weekly_spikes.empty and bool((weekly_spikes >= 3).all()):
+                comments.append("The ORP spikes more than 50 mV at least three times weekly, indicating sufficient slug dosage of biocide.")
+            elif not weekly_spikes.empty:
+                deficient = weekly_spikes[weekly_spikes < 3]
+                middle = deficient
+                if len(weekly_spikes) > 2:
+                    middle = deficient[(deficient.index > weekly_spikes.index.min()) & (deficient.index < weekly_spikes.index.max())]
+                selected_start = (middle if not middle.empty else deficient).index[0]
+                selected_end = min(selected_start + pd.Timedelta(days=6), hourly_orp.index.max())
+                comments.append(
+                    f"ORP did not show more than 50 mV spikes at least three times during the week from {_format_date_range(selected_start, selected_end)}; no slug dosage of biocide is observed during this period. This could be due to lack of inventory, dosing pump lost prime, or a leak in the pump discharge line."
+                )
+    if not comments:
+        comments.append("ORP spike response could not be fully verified from the available trend data, so slug dosage response should be checked during the next service visit.")
+
+    if ts_col and cu_col and cu_col in month_df.columns:
+        cu_frame = month_df[[ts_col, cu_col]].copy()
+        cu_frame[ts_col] = pd.to_datetime(cu_frame[ts_col], errors="coerce")
+        cu_frame[cu_col] = pd.to_numeric(cu_frame[cu_col], errors="coerce")
+        cu_frame = cu_frame.dropna(subset=[ts_col, cu_col]).sort_values(ts_col)
+        if not cu_frame.empty:
+            daily_cu = cu_frame.set_index(ts_col)[cu_col].resample("1D").mean().dropna()
+            high_cu = daily_cu > 0.5
+            if not bool(high_cu.any()):
+                comments.append("Copper corrosion remained within the recommended limit of 0.5 mpy.")
+            else:
+                ranges = _true_date_ranges(high_cu)
+                range_text = "; ".join(_format_date_range(start, end) for start, end in ranges[:3])
+                comments.append(f"Copper corrosion was above the recommended limit of 0.5 mpy from {range_text}.")
+                if trace_col and trace_col in month_df.columns:
+                    trace_frame = month_df[[ts_col, trace_col]].copy()
+                    trace_frame[ts_col] = pd.to_datetime(trace_frame[ts_col], errors="coerce")
+                    trace_frame[trace_col] = pd.to_numeric(trace_frame[trace_col], errors="coerce")
+                    trace_frame = trace_frame.dropna(subset=[ts_col, trace_col]).sort_values(ts_col)
+                    if not trace_frame.empty:
+                        daily_trace = trace_frame.set_index(ts_col)[trace_col].resample("1D").mean().dropna()
+                        low_trace = _trace_low_mask(k, daily_trace)
+                        overlap_found = False
+                        for start, end in ranges:
+                            overlap = low_trace[(low_trace.index >= start) & (low_trace.index <= end)]
+                            if not overlap.empty and bool(overlap.any()):
+                                overlap_found = True
+                                break
+                        if overlap_found:
+                            comments.append("Traced Product was low during the high copper corrosion period, indicating possible lack of inventory.")
+    return comments
+
+
 def _chart_pattern_comment(kind, k, month_df):
     if kind == "corrosion":
-        ms = _series_for_comment(month_df, k.get("ms_col"))
-        cu = _series_for_comment(month_df, k.get("cu_col"))
-        _, _, ms_trend = _trend_split(ms)
-        _, _, cu_trend = _trend_split(cu)
-        ms_mean = k.get("ms_mean")
-        cu_mean = k.get("cu_mean")
-        ms_status = "within" if ms_mean is not None and ms_mean < 3.0 else "outside"
-        cu_status = "within" if cu_mean is not None and cu_mean < 0.5 else "outside"
-        corrosion_good = ms_status == "within" and cu_status == "within"
-        return [
-            _pattern_line("corrosion control", "stable" if ms_trend == cu_trend == "stable" else "increased" if "increased" in (ms_trend, cu_trend) else "decreased" if "decreased" in (ms_trend, cu_trend) else "unknown", corrosion_good),
-            f"Mild steel corrosion {_pattern_word(ms_trend)}, while copper corrosion {_pattern_word(cu_trend)}.",
-            f"MS was {ms_status} the 3.0 MPY target, and Cu was {cu_status} the 0.5 MPY target.",
-            _corrosion_reason(k, ms_trend, cu_trend, corrosion_good),
-        ]
+        return [_corrosion_narrative(k)]
 
     if kind == "scale":
+        recovery_comment = _trace_product_low_then_maintained_comment(k, month_df)
+        if recovery_comment:
+            return [recovery_comment]
         trace = _series_for_comment(month_df, k.get("tp_col"))
         trace_start, trace_end, trace_trend = _trend_split(trace)
         recent_trace = _recent_series_for_comment(month_df, k.get("tp_col"))
@@ -648,19 +1053,7 @@ def _chart_pattern_comment(kind, k, month_df):
         ]
 
     if kind == "orp_corrosion":
-        orp = _series_for_comment(month_df, k.get("orp_col"))
-        cu = _series_for_comment(month_df, k.get("cu_col"))
-        _, _, orp_trend = _trend_split(orp)
-        _, _, cu_trend = _trend_split(cu)
-        spike_visible = len(orp) and orp.max() > orp.median() + 200
-        spike_text = "ORP showed a visible spike response pattern" if spike_visible else "ORP did not show a strong spike response pattern"
-        cu_good = k.get("cu_mean") is not None and k.get("cu_mean") < 0.5
-        return [
-            _pattern_line("ORP response", orp_trend, None),
-            f"{spike_text} during the month without relying on absolute ORP values.",
-            f"Copper corrosion {_pattern_word(cu_trend)} while the ORP pattern changed.",
-            _orp_reason(spike_visible, cu_good),
-        ]
+        return _orp_copper_corrosion_comment(k, month_df)
 
     if kind == "biocide_corrosion":
         relay = _series_for_comment(month_df, k.get("rel_col"))
@@ -690,6 +1083,24 @@ def _chart_pattern_comment(kind, k, month_df):
             f"The trend moved from about {_fmt_value(cond_start, ' µS/cm')} at the start to {_fmt_value(cond_end, ' µS/cm')} at the end.",
             f"{position} The monthly in-range performance was {_fmt_pct(pct_range)}.",
             _conductivity_reason(k, cond_trend, trace_trend),
+        ]
+
+    if kind == "traced_product_cell_fouling":
+        trace = _series_for_comment(month_df, k.get("tp_col"))
+        fouling = _series_for_comment(month_df, k.get("cf_col"))
+        _, _, trace_trend = _trend_split(trace)
+        _, _, fouling_trend = _trend_split(fouling)
+        max_fouling = float(fouling.max()) if not fouling.empty else None
+        avg_fouling = float(fouling.mean()) if not fouling.empty else None
+        if max_fouling is not None and max_fouling > CELL_FOULING_THRESHOLD_PCT:
+            reason = "Cell fouling exceeded the 30% limit, so the fluorometer cell should be inspected and cleaned, and sample flow should be confirmed during the next service visit."
+        else:
+            reason = "Cell fouling remained below the 30% limit, so routine monitoring is appropriate."
+        return [
+            _pattern_line("cell fouling", fouling_trend, max_fouling is not None and max_fouling <= CELL_FOULING_THRESHOLD_PCT),
+            f"Cell fouling averaged {_fmt_value(avg_fouling, '%', 1)} and peaked at {_fmt_value(max_fouling, '%', 1)} during the month.",
+            f"Traced Product {_pattern_word(trace_trend)} while cell fouling {_pattern_word(fouling_trend)}.",
+            reason,
         ]
 
     return []
@@ -1210,6 +1621,51 @@ def make_biocide_corrosion_chart(k, month_df, ts_col, slug, month):
     return p
 
 
+def make_traced_product_cell_fouling_chart(k, month_df, ts_col, slug, month):
+    """Traced Product vs Cell Fouling chart shown when fouling exceeds 30%."""
+    fig, ax1 = plt.subplots(figsize=(8, 3.8))
+    ax2 = ax1.twinx()
+    prod = k["product_name"]
+
+    tp = _resample(month_df, ts_col, k["tp_col"], "4h") if k.get("tp_col") else None
+    if tp is not None and not tp.empty:
+        ax1.plot(tp[ts_col], tp[k["tp_col"]], color=GH, lw=1.0, alpha=0.85,
+                 label=f"{prod} (ppm)")
+        if k.get("tp_sp"):
+            ax1.axhline(k["tp_sp"], color=GH, lw=1.0, ls="--", alpha=0.55,
+                        label=f"{prod} setpoint {k['tp_sp']:.1f} ppm")
+        ax1.set_ylabel(f"{prod} (ppm)", fontsize=9, color=GH)
+        ax1.tick_params(axis="y", colors=GH)
+
+    cf = _resample(month_df, ts_col, k["cf_col"], "4h") if k.get("cf_col") else None
+    if cf is not None and not cf.empty:
+        ax2.plot(cf[ts_col], cf[k["cf_col"]], color=RH, lw=1.0, alpha=0.85,
+                 label="Cell Fouling (%)")
+        ax2.fill_between(cf[ts_col], CELL_FOULING_THRESHOLD_PCT, cf[k["cf_col"]],
+                         where=(cf[k["cf_col"]] > CELL_FOULING_THRESHOLD_PCT),
+                         color=RH, alpha=0.16, label="Above 30%")
+        ax2.axhline(CELL_FOULING_THRESHOLD_PCT, color=RH, lw=1.0, ls=":", alpha=0.75,
+                    label="Cell Fouling 30% limit")
+        ax2.set_ylabel("Cell Fouling (%)", fontsize=9, color=RH)
+        ax2.tick_params(axis="y", colors=RH)
+        ax2.set_ylim(bottom=0)
+
+    ax1.set_title(f"{prod} vs Cell Fouling — {month}", fontsize=11, fontweight="bold", pad=8)
+    _style(ax1)
+    _date_axis(ax1, month_df, ts_col)
+
+    h1,l1 = ax1.get_legend_handles_labels()
+    h2,l2 = ax2.get_legend_handles_labels()
+    ax1.legend(h1+h2, l1+l2, fontsize=7.5, loc="best")
+
+    fig.tight_layout()
+    p = CHARTS_DIR / f"{slug}_traced_product_cell_fouling.png"
+    fig.savefig(p, dpi=150, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    print(f"  ✓ traced product vs cell fouling chart: {p.name}")
+    return p
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # WORD DOCUMENT ASSEMBLY
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1334,7 +1790,7 @@ def add_table(doc, headers, rows, col_cm):
     doc.add_paragraph()
 
 
-def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
+def build_docx(site, month, controllers, k, narr, charts, month_df, coc, water_loss):
     doc = Document()
     sec = doc.sections[0]
     sec.page_width=Cm(21.59); sec.page_height=Cm(27.94)
@@ -1420,10 +1876,11 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
 
     # ── Water Efficiency ──────────────────────────────────────────────────────
     add_h2(doc,"Water Efficiency")
+    water_efficiency_status = _water_efficiency_status(k, coc, water_loss, month_df)
+    water_efficiency_status_label = display_status(water_efficiency_status)
 
     if coc["mu_available"]:
-        cs = display_status(coc["coc_status"]) if coc["coc_status"] else "N/A"
-        add_status(doc, cs)
+        add_status(doc, water_efficiency_status)
 
         add_table(doc,
             ["MU Conductivity","Target COC","Actual COC","Deviation","Status"],
@@ -1431,20 +1888,35 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
               f"{coc['target_coc']}" if coc['target_coc'] else "N/A",
               f"{coc['actual_coc']}" if coc['actual_coc'] else "N/A",
               f"{coc['deviation_pct']}%" if coc['deviation_pct'] is not None else "N/A",
-              cs]],
+              water_efficiency_status_label]],
             [3.4, 3.4, 3.4, 3.4, 3.4])
         if coc.get("coc_gap") is not None and coc.get("coc_gap") >= 1.0:
             add_para(doc,
                 "Actual COC is more than 1.0 below target COC, so this is Critical and needs attention because there can be water loss, excess blowdown, or dilution.",
                 size=10)
-        add_para(doc, _strip_status(narr.get("water_efficiency_narrative","")))
+        if water_loss.get("triggered"):
+            add_table(doc,
+                ["System", "Current COC", "Target COC", "Decrease", "Annual Water Loss", "Estimated Cost"],
+                [[row.get("system_name") or row.get("site_name") or "Cooling Tower",
+                  f"{water_loss['current_coc']:.2f}",
+                  f"{row['target_coc']:.2f}",
+                  f"{row['decrease_pct']:.1f}%",
+                  f"{_fmt_number(row['water_savings_per_annum'])} gal/year",
+                  f"${_fmt_number(row['water_savings_cost'], 2)}/year"]
+                 for row in water_loss["rows"]],
+                [3.4, 2.2, 2.2, 2.2, 3.6, 3.4])
+            add_para(doc,
+                f"Because current COC is more than {WATER_LOSS_THRESHOLD_PCT:g}% below the value-creation Target COC, estimated avoidable makeup water is {_fmt_number(water_loss['water_savings_per_annum'])} gallons per annum. At a makeup water cost of $5 per 100 gallons, the estimated annual savings opportunity is ${_fmt_number(water_loss['water_savings_cost'], 2)}.",
+                size=10)
+        add_para(doc, _water_efficiency_comment(k, month_df, water_loss))
     else:
+        add_status(doc, water_efficiency_status)
         add_para(doc,
             "Makeup water conductivity is not available for this site. "
             "Actual cycles of concentration cannot be calculated. "
             "Makeup conductivity should be captured at the next service visit.",
             size=10)
-        add_para(doc, _strip_status(narr.get("water_efficiency_narrative","")))
+        add_para(doc, _water_efficiency_comment(k, month_df, water_loss))
 
     # ── Product Efficiency ────────────────────────────────────────────────────
     add_h2(doc,"Product Efficiency")
@@ -1496,17 +1968,11 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc):
             caption=f"ORP vs Copper Corrosion Rate — {month}", fig_num=3)
     add_comment(doc, _chart_pattern_comment("orp_corrosion", k, month_df))
 
-    # Chart 4: Biocide Relay vs Copper Corrosion
-    add_h2(doc,"Oxidizing Biocide Pump Relay vs Copper Corrosion")
-    add_img(doc, charts["biocide_corrosion"],
-            caption=f"Oxidizing Biocide Pump Relay vs Copper Corrosion — {month}", fig_num=4)
-    add_comment(doc, _chart_pattern_comment("biocide_corrosion", k, month_df))
-
-    # Chart 5: Conductivity
+    # Chart 4: Conductivity
     add_h2(doc,"Electrode Conductivity")
     add_img(doc, charts["conductivity"],
-            caption=f"Electrode Conductivity — {month}", fig_num=5)
-    add_comment(doc, _chart_pattern_comment("conductivity", k, month_df))
+            caption=f"Electrode Conductivity — {month}", fig_num=4)
+    add_comment(doc, _water_efficiency_comment(k, month_df, water_loss))
 
     doc.add_page_break()
 
@@ -1600,10 +2066,6 @@ def _perf_rows(k, month_df):
          *turb_stats, "–", "75.0", "–", "ℹ Info"],
         ["Cell Fouling (%)", "ACM Skid",
          *cf_stats, "–", "30.0", "–", "ℹ Info"],
-        ["FRC", "Field Data",
-         fmt(k["frc"]) if k["frc"] else "Not avail.",
-         "–", "–", "–", "–", "–", "–",
-         "⚠ Check" if not k["frc"] else "✓"],
     ]
     return rows
 
@@ -1673,7 +2135,6 @@ def main():
         "orp_corrosion":    make_orp_corrosion_chart(k, month_df, ts_col, slug, month),
         "traced_product":   make_traced_product_chart(k, month_df, ts_col, slug, month),
         "conductivity":     make_conductivity_chart(k, month_df, ts_col, slug, month),
-        "biocide_corrosion":make_biocide_corrosion_chart(k, month_df, ts_col, slug, month),
     }
 
     print(f"  Loading MU conductivity from data/MU_conductivity.xlsx …")
@@ -1688,7 +2149,17 @@ def main():
               f"|  Deviation: {coc['deviation_pct']}%  →  {coc['coc_status']}")
 
     print("\nStep 3/4 — Assembling Word document …")
-    doc = build_docx(site, month, controllers, k, narr, charts, month_df, coc)
+    water_efficiency_inputs = _load_water_efficiency_inputs(site, controllers)
+    water_loss = compute_water_loss(coc, water_efficiency_inputs)
+    if water_loss.get("triggered"):
+        print(f"  Water loss — Annual: {water_loss['water_savings_per_annum']:,.0f} gal/year  "
+              f"|  Cost: ${water_loss['water_savings_cost']:,.2f}/year")
+    elif water_loss.get("available"):
+        print(f"  Water loss — {water_loss.get('reason')}")
+    else:
+        print(f"  Water loss — {water_loss.get('reason')}")
+
+    doc = build_docx(site, month, controllers, k, narr, charts, month_df, coc, water_loss)
     out = save_report_document(doc, slug)
     _fix(out)
 
