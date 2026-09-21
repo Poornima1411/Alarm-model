@@ -1,0 +1,950 @@
+{
+  "site": "Flowserve US Raleigh NC (US)",
+  "month": "August 2026",
+  "slug": "flowserve_us_raleigh_nc_us_august_2026",
+  "report_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\output\\flowserve_us_raleigh_nc_us_august_2026_report_updated_20260908_174023.docx",
+  "checklist_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\Report Checklist\\report checklist.xlsx",
+  "total_score": 200.0,
+  "total_max": 226,
+  "percentage": 88.5,
+  "grade": "B",
+  "failed_checks": [
+    {
+      "category": "Corrosion Control",
+      "check": "MS mean value accuracy",
+      "max": 5,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Reported: 0.61, Expected: ~0.99"
+    },
+    {
+      "category": "Scale Control",
+      "check": "Status matches % in range",
+      "max": 8,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Reported: Acceptable, Expected: Critical (5.0% in range)"
+    },
+    {
+      "category": "Scale Control",
+      "check": "Critical language when <25%",
+      "max": 4,
+      "score": 0.0,
+      "passed": false,
+      "detail": ""
+    },
+    {
+      "category": "Report Structure",
+      "check": "At least 1 chart included",
+      "max": 4,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Chart-like patterns found: 0"
+    },
+    {
+      "category": "Report Structure",
+      "check": "Final Release Approval checklist present",
+      "max": 2,
+      "score": 0.0,
+      "passed": false,
+      "detail": ""
+    },
+    {
+      "category": "Report Checklist",
+      "check": "6. Calculate the  avg MS and copper corrosion values",
+      "max": 1,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Expected MS 0.9909, Cu 0.0268"
+    },
+    {
+      "category": "Report Checklist",
+      "check": "49. Mention the no.of alarms genertaed that month",
+      "max": 1,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Alarm summary/recommendation checked"
+    },
+    {
+      "category": "Report Checklist",
+      "check": "50. Mention the alarm and mention the recommendation for it",
+      "max": 1,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Alarm summary/recommendation checked"
+    }
+  ],
+  "categories": {
+    "Narrative Structure": {
+      "score": 15.0,
+      "max": 15,
+      "pct": 100.0,
+      "checks": [
+        {
+          "category": "Narrative Structure",
+          "check": "All narrative keys populated",
+          "max": 10,
+          "score": 10.0,
+          "passed": "100%",
+          "detail": "Present: 11/11."
+        },
+        {
+          "category": "Narrative Structure",
+          "check": "No placeholder text",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": "Clean"
+        }
+      ]
+    },
+    "Corrosion Control": {
+      "score": 24.0,
+      "max": 29,
+      "pct": 82.8,
+      "checks": [
+        {
+          "category": "Corrosion Control",
+          "check": "Exact MS corrosion wording",
+          "max": 8,
+          "score": 8,
+          "passed": true,
+          "detail": "Must contain: 'mild steel and copper corrosion rates averaged X.XX mpy and X.XX mpy'"
+        },
+        {
+          "category": "Corrosion Control",
+          "check": "Exact Cu corrosion wording",
+          "max": 8,
+          "score": 8,
+          "passed": true,
+          "detail": "Must contain: 'recommended limits of <5 mpy and <0.5 mpy'"
+        },
+        {
+          "category": "Corrosion Control",
+          "check": "MS mean value accuracy",
+          "max": 5,
+          "score": 0.0,
+          "passed": false,
+          "detail": "Reported: 0.61, Expected: ~0.99"
+        },
+        {
+          "category": "Corrosion Control",
+          "check": "Cu mean value accuracy",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": "Reported: 0.02, Expected: ~0.03"
+        },
+        {
+          "category": "Corrosion Control",
+          "check": "Status label present",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": ""
+        }
+      ]
+    },
+    "Scale Control": {
+      "score": 18.0,
+      "max": 30,
+      "pct": 60.0,
+      "checks": [
+        {
+          "category": "Scale Control",
+          "check": "Scale Control discusses Traced Product only",
+          "max": 6,
+          "score": 6,
+          "passed": true,
+          "detail": "Clean"
+        },
+        {
+          "category": "Scale Control",
+          "check": "Status matches % in range",
+          "max": 8,
+          "score": 0.0,
+          "passed": false,
+          "detail": "Reported: Acceptable, Expected: Critical (5.0% in range)"
+        },
+        {
+          "category": "Scale Control",
+          "check": "Critical language when <25%",
+          "max": 4,
+          "score": 0.0,
+          "passed": false,
+          "detail": ""
+        },
+        {
+          "category": "Scale Control",
+          "check": "Observation present (HIGH product)",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Scale Control",
+          "check": "Recommendation present (HIGH product)",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Scale Control",
+          "check": "Root cause references conductivity behaviour",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": "Scale Control must explain root cause using conductivity comparison"
+        }
+      ]
+    },
+    "Microbial Control": {
+      "score": 29,
+      "max": 29,
+      "pct": 100.0,
+      "checks": [
+        {
+          "category": "Microbial Control",
+          "check": "No absolute ORP values in narrative",
+          "max": 8,
+          "score": 8,
+          "passed": true,
+          "detail": "Clean"
+        },
+        {
+          "category": "Microbial Control",
+          "check": "FRC not-available statement present",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": "Must state FRC will be checked at next service visit"
+        },
+        {
+          "category": "Microbial Control",
+          "check": "ORP spike/Delta ORP comment present",
+          "max": 6,
+          "score": 6,
+          "passed": true,
+          "detail": "MANDATORY in every report"
+        },
+        {
+          "category": "Microbial Control",
+          "check": "No copper corrosion target sentence",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": "Remove 'No copper corrosion within target' from Microbial Control"
+        },
+        {
+          "category": "Microbial Control",
+          "check": "No 'relay firing' language",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": "Must use 'biocide dosing was triggered' / 'pump was activated' instead"
+        },
+        {
+          "category": "Microbial Control",
+          "check": "Microbial doesn't discuss pH/turbidity/cell fouling",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": "Clean"
+        }
+      ]
+    },
+    "Water Efficiency": {
+      "score": 7,
+      "max": 7,
+      "pct": 100.0,
+      "checks": [
+        {
+          "category": "Water Efficiency",
+          "check": "Conductivity discussed",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Water Efficiency",
+          "check": "COC / cycles of concentration mentioned",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": ""
+        }
+      ]
+    },
+    "Product Efficiency": {
+      "score": 5,
+      "max": 5,
+      "pct": 100.0,
+      "checks": [
+        {
+          "category": "Product Efficiency",
+          "check": "Product Name (generic OK \u2014 none in SCC)",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": ""
+        }
+      ]
+    },
+    "Proactive System Support": {
+      "score": 7,
+      "max": 7,
+      "pct": 100.0,
+      "checks": [
+        {
+          "category": "Proactive System Support",
+          "check": "Not titled 'Alarms'",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": "Section must be titled 'Proactive System Support'"
+        },
+        {
+          "category": "Proactive System Support",
+          "check": "'No service notes' stated when none exist",
+          "max": 4,
+          "score": 4,
+          "passed": true,
+          "detail": ""
+        }
+      ]
+    },
+    "Report Structure": {
+      "score": 36.0,
+      "max": 42,
+      "pct": 85.7,
+      "checks": [
+        {
+          "category": "Report Structure",
+          "check": "Generated report text exists",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Title page heading present",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Prepared Date / Prepared By present",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Report Status field present",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Corrosion Control",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Scale Control",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Microbial Control",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Water Efficiency",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Product Efficiency",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Section present: Proactive System Support",
+          "max": 2,
+          "score": 2,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Performance Summary section present",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "Performance Summary table present",
+          "max": 3,
+          "score": 3,
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "category": "Report Structure",
+          "check": "At least 1 chart included",
+          "max": 4,
+          "score": 0.0,
+          "passed": false,
+          "detail": "Chart-like patterns found: 0"
+        },
+        {
+          "category": "Report Structure",
+          "check": "No absolute ORP values in narrative text",
+          "max": 5,
+          "score": 5,
+          "passed": true,
+          "detail": "Clean"
+        },
+        {
+          "category": "Report Structure",
+          "check": "Final Release Approval checklist present",
+          "max": 2,
+          "score": 0.0,
+          "passed": false,
+          "detail": ""
+        }
+      ]
+    },
+    "Report Checklist": {
+      "score": 59.0,
+      "max": 62,
+      "pct": 95.2,
+      "checks": [
+        {
+          "category": "Report Checklist",
+          "check": "1. 1 st page- title",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Title text found"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "2. 2 nd -3 rd page  Executive summary",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Executive Summary section checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "3. Under Executive summary",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Executive Summary section checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "4. Corrosion control as 1 st heading",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Corrosion Control heading checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "5. Mention corrosion control status",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Corrosion status searched"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "6. Calculate the  avg MS and copper corrosion values",
+          "max": 1,
+          "score": 0.0,
+          "passed": false,
+          "detail": "Expected MS 0.9909, Cu 0.0268"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "7. Check if it's less than 3 mpy for MS corrosion rate",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "MS mean: 0.9909"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "8. Check if it's less than 0.5 mpy for Cu corrosion rate",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Cu mean: 0.0268"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "9. Mention whether  how much % of time it's maintained within range",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Corrosion in-range wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "10. Check whether 95% of time the corrosion is well mainatined within the range for copper and MS. If it's within range , mention it's well mainatined within the required range.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Corrosion in-range wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "11. If the corrosion rate is mainatined above the mentioned range in initial 10 days and later it has showed decreasing trend . Currently , if the value is within range. Run the particular alarm logic in back end and mention the reason. Also highlight rightnow, the situation is corrected and maintained in range.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Not applicable: Initial-10-day corrosion trend detection is not available in the current score inputs"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "12. If the corrosion rate is mainatined above the mentioned range in last 10 days and if it has showed increasing trend of corrosion rate after a date. Mention that from which date it has showed incraesing date . Currently , if the value still remains high . Run the particular alarm logic in back end and mention the reason. If the value has started decreasing at point. Highlight this if it has started decreasing.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Not applicable: Last-10-day corrosion trend detection is not available in the current score inputs"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "13. Check if the pH has decreased and corrosion has incraesed, then mention as process leak in the system. Highlight once the",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Not applicable: pH/corrosion process-leak condition was not detected by the current score inputs"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "14. Scale control as 2 nd heading",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Scale Control heading checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "15. Mention whether 100 % of time trace is  maintained within range",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Corrosion in-range wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "16. Mention scale control status",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Expected scale status: Critical"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "17. If the trace is decreased, check whether cond is less. Then mention as water loss and will be inspected in upcoming service",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Not applicable: Traced product is not below range"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "18. If the trace is decreased, check whether cond is maintained in range. Then mention that this could be due to lack of inventory/ dosing pump lost prime/ leak in the pump discharge line will be inspected in upcoming service",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Not applicable: Traced product is not below range"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "19. If trace is higher than tag  in almost 90% of time .Calculate the  polymer consumption rate( trace- tag/trace) for each data point. Check if this value increased  in the month. If so, say the scale control needs attention, check whether the ADE phosphate and silica residual entered on / after the date the increasing trend of polymer consumption is noticed. If ADE of phosphate and silica is not available, mention it  will be measure in the upcoming service visit.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Scale Control heading checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "20. Check whether pH has increased at any point of time, then also mention scale control needs attention, phosphate and silica residual will be checked in upcoming service visit.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Scale Control heading checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "21. Check whether conductivity has increased and polymer consumption also increased. If yes, mention this is due to increase in Cycles of concentration.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Polymer consumption wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "22. Microbial control as 3 rd heading",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Microbial Control heading checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "23. Mention is the microbial control status",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Expected microbial status: Acceptable"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "24. Check the biocide dosage is intimer or on/off control .Mention that control type.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Biocide control type wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "25. If this in timer control/ delta timer, See if there is spikes in ORP reading.  If not, insist that inventory level, functionality of dosing pump/ leak in pump discharge line will be checked.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "ORP spike language checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "26. If the biocide control is in on/off. Check if it's within control. If not,  mention that  inventory level, functionality of dosing pump/ leak in pump discharge line will be checked.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Not applicable: Biocide control is not described as on/off in the generated report"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "27. Take FRC level from ADE excel",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "FRC unavailable path checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "28. Mention whether FRC level is within range of 02-0.5 ppm.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Not applicable: FRC value not available"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "29. If it's below range, mention to increase biocide dosage. If the range is high, then mention that the biocide dosage will be reduced .",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Biocide control type wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "30. If FRC level is not mentioned,Mention it will be measured in upcoming service visit",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Missing FRC follow-up checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "31. If dip slide is not present, mention it will be measured in upcoming visit",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Dip slide / CFU wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "32. If there is dipslide analysis, mention corresponding cfu. If it is < 10^4 then its is in good microbial control.If it is < 10^2 then it i in excellent control. If the cfu is between 10^4 and 10^6 , then it needs attention. If cfu is <10^6 then it is critical and slug dosage duration needs to be increased.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Microbial Control heading checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "33. Water efficiency as 4 th heading",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Water Efficiency heading checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "34. Take only avg conductovity value diviode it by makeup conductivity and say the current COC.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "COC wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "35. Take the setpoint divided by makeup conductivity and say the target COC.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "COC wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "36. Don't mention avg conductivity say whether it the conductivity is within range as 100 %",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "COC wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "37. If the current COC is same as target COC within 20 % then mention that the water efficiency is good.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "COC wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "38. If  current COC less than target COC mention that there could be water loss in the system",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "COC wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "39. If the final day avg COC same as target COC then mention currently everything is maintained in range",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "COC wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "40. If the final day avg COCless than target COC then mention that this will be inspected in upcoming service viist.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "COC wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "41. If the current COC hiher than target COC mention that the blowdown/makeup valve needs inspection",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "COC wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "42. If the final day avg COC greater than target COC then mention that this will be inspected in upcoming service viist.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "COC wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "43. Product Efficiency as 5 th heading",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Product Efficiency heading checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "44. Mention whether trace product is 100% within range.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Expected traced product in range: 5.0%"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "45. Compare actual consumption and target consumptiuon, if both are same mention product efficiency is good.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Consumption wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "46. If not mention whether there is excess or less product consumption .",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Consumption wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "47. If the consumption is less, check if there is prod LL alarm or decrease in prod or increase in cond or cond HHalarm. If so, prod LL mention that reasons after running Prod LL alarm.",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Product LL / conductivity alarm wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "48. Proactive summary as 6Th heading",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Proactive section checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "49. Mention the no.of alarms genertaed that month",
+          "max": 1,
+          "score": 0.0,
+          "passed": false,
+          "detail": "Alarm summary/recommendation checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "50. Mention the alarm and mention the recommendation for it",
+          "max": 1,
+          "score": 0.0,
+          "passed": false,
+          "detail": "Alarm summary/recommendation checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "51. Insight",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Insight wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "52. Mention calc for water loss and prod efficiency if there water efficiency is not in range",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Water loss wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "53. Mention regarding asset preservation if the corrosion rate is not good and calculate if there is only decrease in corrosion",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Not applicable: Corrosion status is Excellent"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "54. Performance Summary as 6th heading",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Performance Summary checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "55. Mention all parameter with HH and LL limit along with % of range",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Limits and percent range checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "56. Charts trend",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Chart/graph wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "57. If product efficiency is not good  plot flow Vs prod",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Chart/graph wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "58. Mention comment for the above graph",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Chart/graph wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "59. If water efficiency is not good  plot flow Vs cond",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Chart/graph wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "60. Mention comment for the above graph",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Chart/graph wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "61. If the corrosion rate is not good plot MS corrosion rate or Copper corrosion rate",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Chart/graph wording checked"
+        },
+        {
+          "category": "Report Checklist",
+          "check": "62. Mention comment for the above graph",
+          "max": 1,
+          "score": 1,
+          "passed": true,
+          "detail": "Chart/graph wording checked"
+        }
+      ]
+    }
+  }
+}

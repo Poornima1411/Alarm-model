@@ -4,9 +4,9 @@
   "slug": "synthomer_chester_sc_us_may_2026",
   "report_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\output\\synthomer_chester_sc_us_may_2026_report.docx",
   "checklist_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\Report Checklist\\report checklist.xlsx",
-  "total_score": 205.0,
+  "total_score": 210.0,
   "total_max": 223,
-  "percentage": 91.9,
+  "percentage": 94.2,
   "grade": "A",
   "failed_checks": [
     {
@@ -24,22 +24,6 @@
       "score": 0.0,
       "passed": false,
       "detail": "No status label found in scale narrative"
-    },
-    {
-      "category": "Report Structure",
-      "check": "Prepared Date / Prepared By present",
-      "max": 3,
-      "score": 0.0,
-      "passed": false,
-      "detail": ""
-    },
-    {
-      "category": "Report Structure",
-      "check": "Report Status field present",
-      "max": 2,
-      "score": 0.0,
-      "passed": false,
-      "detail": ""
     },
     {
       "category": "Report Structure",
@@ -144,7 +128,7 @@
         },
         {
           "category": "Scale Control",
-          "check": "Action Required language when <25%",
+          "check": "Critical language when <25%",
           "max": 4,
           "score": 4,
           "passed": true,
@@ -285,9 +269,9 @@
       ]
     },
     "Report Structure": {
-      "score": 35.0,
+      "score": 40.0,
       "max": 42,
-      "pct": 83.3,
+      "pct": 95.2,
       "checks": [
         {
           "category": "Report Structure",
@@ -309,16 +293,16 @@
           "category": "Report Structure",
           "check": "Prepared Date / Prepared By present",
           "max": 3,
-          "score": 0.0,
-          "passed": false,
+          "score": 3,
+          "passed": true,
           "detail": ""
         },
         {
           "category": "Report Structure",
           "check": "Report Status field present",
           "max": 2,
-          "score": 0.0,
-          "passed": false,
+          "score": 2,
+          "passed": true,
           "detail": ""
         },
         {
@@ -542,7 +526,7 @@
           "max": 1,
           "score": 1,
           "passed": true,
-          "detail": "Expected scale status: Action Required"
+          "detail": "Expected scale status: Critical"
         },
         {
           "category": "Report Checklist",
@@ -598,7 +582,7 @@
           "max": 1,
           "score": 1,
           "passed": true,
-          "detail": "Expected microbial status: Stable"
+          "detail": "Expected microbial status: Acceptable"
         },
         {
           "category": "Report Checklist",
@@ -838,7 +822,7 @@
           "max": 1,
           "score": 1,
           "passed": true,
-          "detail": "Not applicable: Corrosion status is Good"
+          "detail": "Not applicable: Corrosion status is Excellent"
         },
         {
           "category": "Report Checklist",
