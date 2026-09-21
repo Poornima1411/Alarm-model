@@ -1,0 +1,11 @@
+[
+  {
+    "Location":"St. Joseph's Hospital Savannah GA (US)",
+    "ContextPoint":"St. Joseph's Hospital GA (US)",
+    "CreatedDate":"2026-07-10T13:02:29.213",
+    "ModifiedDate":"2026-07-16T07:22:32.830",
+    "ServiceNote":"<p>ACM: 1. ORP level is maintaining low on site and dosing pump needs inspection on site. And probe also needs inspection. Please verify the onsite inventory and FRC level on site. 2. pH is maintaining around 9.25 and probe needs to be inspected on site.<\/p>\n<p>&nbsp;<\/p>\n<p>Notes from the field: Team St. Joseph Hospital &ndash; ACM The ORP level continues to remain low due to a clogged sample line. The line was unclogged during today&rsquo;s service, and the ORP reading is expected to return to its normal operating range as sample flow stabilizes. The system will continue to be monitored to verify that ORP levels recover and remain within the target range.<\/p>",
+    "Status":"Closed",
+    "ServiceNotePlain":"ACM: 1. ORP level is maintaining low on site and dosing pump needs inspection on site. And probe also needs inspection. Please verify the onsite inventory and FRC level on site. 2. pH is maintaining around 9.25 and probe needs to be inspected on site. Notes from the field: Team St. Joseph Hospital &ndash; ACM The ORP level continues to remain low due to a clogged sample line. The line was unclogged during today&rsquo;s service, and the ORP reading is expected to return to its normal operating range as sample flow stabilizes. The system will continue to be monitored to verify that ORP levels recover and remain within the target range."
+  }
+]

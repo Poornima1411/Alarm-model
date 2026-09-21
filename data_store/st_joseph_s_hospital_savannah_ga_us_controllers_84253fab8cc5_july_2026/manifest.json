@@ -1,0 +1,21 @@
+{
+  "fetched_at": "2026-08-24T11:20:37.925333",
+  "site_name": "St. Joseph's Hospital Savannah GA (US)",
+  "requested_controller_ids": [
+    "84253FAB8CC5"
+  ],
+  "reporting_month": "July 2026",
+  "start_date": "2026-07-01",
+  "end_date": "2026-07-31",
+  "telemetry_days": 90,
+  "controllers": [
+    "84253FAB8CC5"
+  ],
+  "files": {
+    "controllers": "controllers.json",
+    "service_notes": "service_notes.json",
+    "ade_data": "ade_data.json",
+    "scc": "scc.json",
+    "telemetry_dir": "telemetry/"
+  }
+}

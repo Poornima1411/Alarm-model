@@ -1,0 +1,21 @@
+{
+  "fetched_at": "2026-09-09T04:38:55.155697",
+  "site_name": "Lovett School Atlanta GA (US)",
+  "requested_controller_ids": [
+    "84253FA7D233"
+  ],
+  "reporting_month": "August 2026",
+  "start_date": "2026-08-01",
+  "end_date": "2026-08-31",
+  "telemetry_days": 90,
+  "controllers": [
+    "84253FA7D233"
+  ],
+  "files": {
+    "controllers": "controllers.json",
+    "service_notes": "service_notes.json",
+    "ade_data": "ade_data.json",
+    "scc": "scc.json",
+    "telemetry_dir": "telemetry/"
+  }
+}

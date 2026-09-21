@@ -15,7 +15,7 @@ import pandas as pd
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 BASE_URL = os.environ.get("OBS_API_BASE",
     "https://budig-bb-bbapiappa-01-p.azurewebsites.net/api/v1")

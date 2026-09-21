@@ -1,0 +1,19 @@
+{
+  "fetched_at": "2026-08-24T13:07:48.801667",
+  "site_name": "Flowserve US Raleigh NC (US)",
+  "requested_controller_ids": [],
+  "reporting_month": "August 2026",
+  "start_date": "2026-08-01",
+  "end_date": "2026-08-31",
+  "telemetry_days": 90,
+  "controllers": [
+    "84253F5EE1C9"
+  ],
+  "files": {
+    "controllers": "controllers.json",
+    "service_notes": "service_notes.json",
+    "ade_data": "ade_data.json",
+    "scc": "scc.json",
+    "telemetry_dir": "telemetry/"
+  }
+}

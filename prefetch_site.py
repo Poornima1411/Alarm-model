@@ -77,7 +77,7 @@ def main():
     start_date, end_date = _month_to_range(reporting_month)
 
     from dotenv import load_dotenv
-    load_dotenv(ROOT / ".env")
+    load_dotenv(ROOT / ".env", override=True)
 
     import pandas as pd
     from src.data.sql_fetcher import (

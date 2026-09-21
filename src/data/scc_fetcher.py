@@ -28,7 +28,7 @@ from typing import Optional, List, Dict, Any
 import pandas as pd
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 log = logging.getLogger(__name__)
 

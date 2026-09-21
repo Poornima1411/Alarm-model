@@ -110,6 +110,102 @@
 			"command": "$code = @'\nfrom docx import Document\nimport re\npath = 'output/flowserve_us_raleigh_nc_us_july_2026_report_updated.docx'\ntext = '\\n'.join(paragraph.text for paragraph in Document(path).paragraphs)\nfor match in re.findall(r'Status:\\s*(Excellent|Acceptable|Critical|Good|Stable|Action Required)', text):\n    print(match)\n'@; .\\.venv\\Scripts\\python.exe -c $code",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "prefetch-st-joseph-august-2026",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe",
+			"args": [
+				"prefetch_site.py",
+				"--site",
+				"St. Joseph's Hospital Savannah GA (US)",
+				"--month",
+				"August 2026",
+				"--force"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "prefetch-st-joseph-august-2026-by-controller",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe",
+			"args": [
+				"prefetch_site.py",
+				"--controller-ids",
+				"84253FAB8CC5",
+				"--month",
+				"August 2026",
+				"--force"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "prefetch-candler-august-2026-by-controller",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe",
+			"args": [
+				"prefetch_site.py",
+				"--controller-ids",
+				"84253F5FB67B",
+				"84253FAB8C75",
+				"--month",
+				"August 2026",
+				"--force"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "prepare-context-st-joseph-august-2026-by-controller",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe",
+			"args": [
+				"prepare_report_context.py",
+				"--controller-ids",
+				"84253FAB8CC5",
+				"--month",
+				"August 2026"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "prefetch-st-joseph-july-2026-by-controller",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe",
+			"args": [
+				"prefetch_site.py",
+				"--controller-ids",
+				"84253FAB8CC5",
+				"--month",
+				"July 2026",
+				"--force"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "generate-narrative-st-joseph-july-2026-by-controller",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe",
+			"args": [
+				"generate_narrative.py",
+				"--controller-ids",
+				"84253FAB8CC5",
+				"--month",
+				"July 2026"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "generate-report-st-joseph-july-2026-by-controller",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe",
+			"args": [
+				"generate_report.py",
+				"--controller-ids",
+				"84253FAB8CC5",
+				"--month",
+				"July 2026"
+			],
+			"isBackground": false
 		}
 	]
 }
