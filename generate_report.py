@@ -20,7 +20,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
-import numpy as np
 
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor, Cm
@@ -153,6 +152,59 @@ def _load_water_efficiency_inputs(site, controllers):
         return fuzzy_matches
     except Exception as e:
         print(f"  [WARN] Could not read Value creation.xlsx water efficiency data: {e}")
+    return records
+
+
+def _load_product_efficiency_inputs(site, controllers):
+    """Read value-creation product-efficiency target consumption rows for the current report scope."""
+    value_file = ROOT / "data" / "Value creation.xlsx"
+    if not value_file.exists():
+        return []
+
+    site_key = _normal_key(site)
+    records = []
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(value_file, data_only=True)
+        if "Product Efficiency" not in wb.sheetnames:
+            return []
+        ws = wb["Product Efficiency"]
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            return []
+        headers = [_normal_key(header) for header in rows[0]]
+
+        def col(*names):
+            wanted = {_normal_key(name) for name in names}
+            return next((idx for idx, header in enumerate(headers) if header in wanted), None)
+
+        idx_site = col("Site Name")
+        idx_system = col("System Name")
+        idx_consumption = col("Consumption rate (pounds)", "Consumption rate", "Consumption")
+
+        all_records = []
+        for row in rows[1:]:
+            target_annual = _float_or_none(row[idx_consumption]) if idx_consumption is not None else None
+            if not target_annual:
+                continue
+            all_records.append({
+                "site_name": str(row[idx_site]).strip() if idx_site is not None and row[idx_site] else "",
+                "system_name": str(row[idx_system]).strip() if idx_system is not None and row[idx_system] else "",
+                "target_annual_pounds": target_annual,
+            })
+
+        exact_matches = [record for record in all_records if _normal_key(record["site_name"]) == site_key]
+        if exact_matches:
+            return exact_matches
+
+        fuzzy_matches = []
+        for record in all_records:
+            workbook_site_key = _normal_key(record["site_name"])
+            if difflib.SequenceMatcher(None, site_key, workbook_site_key).ratio() >= 0.78:
+                fuzzy_matches.append(record)
+        return fuzzy_matches
+    except Exception as e:
+        print(f"  [WARN] Could not read Value creation.xlsx product efficiency data: {e}")
     return records
 
 
@@ -604,6 +656,50 @@ def _scale_reason(k, trace_trend, cond_trend):
     return "Likely reason: feed control, conductivity control, and field residuals should be reviewed together."
 
 
+def _traced_product_chart_comment(k, month_df):
+    trace = _series_for_comment(month_df, k.get("tp_col"))
+    conductivity = _series_for_comment(month_df, k.get("ec_col"))
+    trace_start, trace_end, trace_trend = _trend_split(trace)
+    _, _, conductivity_trend = _trend_split(conductivity)
+    lower = k.get("tp_ll")
+    upper = k.get("tp_ul")
+    setpoint = k.get("tp_sp")
+    in_range_pct = _pct_in_range_from_series(trace, lower, upper)
+
+    if lower is not None and upper is not None:
+        setpoint_text = f"{lower:.1f}-{upper:.1f} ppm"
+    elif setpoint is not None:
+        setpoint_text = f"{setpoint:.1f} ppm"
+    else:
+        setpoint_text = "the configured setpoint"
+
+    comments = [
+        f"Traced Product was maintained within the setpoint range of {setpoint_text} only {_fmt_pct(in_range_pct)} of the time."
+    ]
+
+    if setpoint is not None and not trace.empty and bool((trace > setpoint).all()):
+        comments.append(
+            "Traced Product was maintained above the setpoint throughout the reporting period; the possible root cause is a high dosing pump stroke rate, which will be inspected during the upcoming service visit."
+        )
+    elif upper is not None and not trace.empty and bool((trace > upper).all()):
+        comments.append(
+            "Traced Product was maintained above the control range throughout the reporting period; the possible root cause is a high dosing pump stroke rate, which will be inspected during the upcoming service visit."
+        )
+    elif trace_end is not None and trace_start is not None:
+        comments.append(
+            f"The trend moved from about {_fmt_value(trace_start, ' ppm')} at the start to {_fmt_value(trace_end, ' ppm')} at the end."
+        )
+
+    if trace_trend == "increased" and conductivity_trend == "increased":
+        comments.append(
+            "The Traced Product increase correlates with the increase in conductivity, indicating the product trend is linked to tower concentration; the blowdown and makeup water valves will be inspected so product can be maintained in good control in future."
+        )
+    elif not comments[-1].endswith("future."):
+        comments.append(_scale_reason(k, trace_trend, conductivity_trend))
+
+    return comments
+
+
 def _corrosion_reason(k, ms_trend, cu_trend, corrosion_good):
     if corrosion_good and "increased" not in (ms_trend, cu_trend):
         return "Likely reason: inhibitor residual and operating chemistry are keeping corrosion protected."
@@ -768,21 +864,8 @@ def _add_unique_recommendation(recommendations, text, key):
     recommendations.append((key, text))
 
 
-def _is_empty_service_note_sentence(sentence):
-    return bool(re.search(r"\bno\s+service\s+notes?\s+(?:were\s+)?(?:recorded|found)\b", sentence, re.I))
-
-
 def _proactive_support_summary(k, narr, coc, month_df):
     recommendations = []
-
-    base = _strip_status(narr.get("proactive_support_narrative", ""))
-    alarm_sentence = ""
-    for sentence in re.split(r"(?<=[.!?])\s+", base):
-        if _is_empty_service_note_sentence(sentence):
-            continue
-        if re.search(r"\balarm\b|service note", sentence, re.I):
-            alarm_sentence = sentence.strip()
-            break
 
     ms = _series_for_comment(month_df, k.get("ms_col"))
     cu = _series_for_comment(month_df, k.get("cu_col"))
@@ -880,11 +963,9 @@ def _proactive_support_summary(k, narr, coc, month_df):
         )
 
     if not recommendations:
-        return alarm_sentence or "No unresolved performance recommendations were identified from the system health check, water efficiency, or product efficiency review. Continue routine monitoring."
+        return "No unresolved performance recommendations were identified from the system health check, water efficiency, or product efficiency review. Continue routine monitoring."
 
     rec_text = " ".join(text for _, text in recommendations)
-    if alarm_sentence:
-        return f"{alarm_sentence} Recommended follow-up: {rec_text}"
     return f"Recommended follow-up: {rec_text}"
 
 
@@ -1035,22 +1116,7 @@ def _chart_pattern_comment(kind, k, month_df):
         return [_corrosion_narrative(k)]
 
     if kind == "scale":
-        recovery_comment = _trace_product_low_then_maintained_comment(k, month_df)
-        if recovery_comment:
-            return [recovery_comment]
-        trace = _series_for_comment(month_df, k.get("tp_col"))
-        trace_start, trace_end, trace_trend = _trend_split(trace)
-        recent_trace = _recent_series_for_comment(month_df, k.get("tp_col"))
-        recent_deviation_pct = _deviation_from_setpoint(recent_trace, k.get("tp_sp"))
-        recent_in_range_pct = _pct_in_range_from_series(recent_trace, k.get("tp_ll"), k.get("tp_ul"))
-        pct_range = _pct_in_range_from_series(trace, k.get("tp_ll"), k.get("tp_ul"))
-        position = _position_text(k.get("tp_mean"), k.get("tp_ll"), k.get("tp_ul"), "Traced Product average")
-        return [
-            _scale_pattern_summary(k, trace_trend, recent_deviation_pct, recent_in_range_pct),
-            _scale_recent_detail(recent_deviation_pct, trace_start, trace_end),
-            f"{position} The monthly in-range performance was {_fmt_pct(pct_range)}.",
-            _scale_reason(k, trace_trend, _trend_split(_series_for_comment(month_df, k.get("ec_col")))[2]),
-        ]
+        return _traced_product_chart_comment(k, month_df)
 
     if kind == "orp_corrosion":
         return _orp_copper_corrosion_comment(k, month_df)
@@ -1435,7 +1501,6 @@ def make_corrosion_chart(k, month_df, ts_col, slug, month):
     if cu is not None and not cu.empty:
         ax2.plot(cu[ts_col], cu[k["cu_col"]], color=YH, lw=1.0, alpha=0.9,
                  label=f"Corrosion Cu (MPY)")
-        ax2.fill_between(cu[ts_col], 0, cu[k["cu_col"]], color=YH, alpha=0.15)
         ax2.set_ylabel("Copper Corrosion (MPY)", fontsize=9, color=YH)
         ax2.tick_params(axis="y", colors=YH)
         ax2.set_ylim(bottom=0)
@@ -1487,7 +1552,6 @@ def make_orp_corrosion_chart(k, month_df, ts_col, slug, month):
     if cu is not None and not cu.empty:
         ax2.plot(cu[ts_col], cu[k["cu_col"]], color=YH, lw=1.2, alpha=0.9,
                  label="Corrosion Cu (MPY)")
-        ax2.fill_between(cu[ts_col], 0, cu[k["cu_col"]], color=YH, alpha=0.15)
         ax2.set_ylabel("Copper Corrosion (MPY)", fontsize=9, color=YH)
         ax2.tick_params(axis="y", colors=YH)
         ax2.set_ylim(bottom=0)
@@ -1518,24 +1582,13 @@ def make_traced_product_chart(k, month_df, ts_col, slug, month):
 
     tp = _resample(month_df, ts_col, k["tp_col"], "4h")
     if tp is not None and not tp.empty:
-        # Shade SCC control band
-        ax.axhspan(ll, ul, alpha=0.10, color=GH, label=f"Controller Setpoint range {ll:.1f}–{ul:.1f} ppm")
         ax.axhline(sp, color=GH, lw=1.2, ls="--", alpha=0.7, label=f"Setpoint {sp:.1f} ppm")
-        ax.axhline(ul, color="#AAAAAA", lw=0.7, ls=":")
-        ax.axhline(ll, color="#AAAAAA", lw=0.7, ls=":")
+        ax.axhline(ul, color="#AAAAAA", lw=0.7, ls=":", label=f"Upper limit {ul:.1f} ppm")
+        ax.axhline(ll, color="#AAAAAA", lw=0.7, ls=":", label=f"Lower limit {ll:.1f} ppm")
 
         vals = tp[k["tp_col"]].values
         times = tp[ts_col].values
-        in_range  = np.where((vals>=ll) & (vals<=ul), vals, np.nan)
-        out_range = np.where((vals<ll)  | (vals>ul),  vals, np.nan)
-
-        ax.plot(times, vals,      color=GH,  lw=1.0, alpha=0.6)
-        ax.fill_between(times, ll, vals, where=(vals>=ll)&(vals<=ul),
-                        color=GH, alpha=0.15, label="In Controller Setpoint range")
-        ax.fill_between(times, vals, ul, where=(vals>ul),
-                        color=RH, alpha=0.18, label="Above Controller Setpoint range")
-        ax.fill_between(times, ll, vals, where=(vals<ll),
-                        color=RH, alpha=0.18, label="Below Controller Setpoint range")
+        ax.plot(times, vals, color=GH, lw=1.0, alpha=0.85, label=f"{prod} (ppm)")
 
     ax.set_ylabel(f"{prod} (ppm)", fontsize=9)
     ax.set_title(f"{prod} — {month}", fontsize=11, fontweight="bold", pad=8)
@@ -1559,14 +1612,13 @@ def make_conductivity_chart(k, month_df, ts_col, slug, month):
 
     ec = _resample(month_df, ts_col, k["ec_col"], "2h")
     if ec is not None and not ec.empty:
-        ax.axhspan(ll, ul, alpha=0.10, color=BH, label=f"Controller Setpoint range {ll:.0f}–{ul:.0f} µS/cm")
         ax.axhline(sp, color=BH, lw=1.2, ls="--", alpha=0.7, label=f"Setpoint {sp:.0f} µS/cm")
+        ax.axhline(ul, color="#AAAAAA", lw=0.7, ls=":", label=f"Upper limit {ul:.0f} µS/cm")
+        ax.axhline(ll, color="#AAAAAA", lw=0.7, ls=":", label=f"Lower limit {ll:.0f} µS/cm")
 
         vals  = ec[k["ec_col"]].values
         times = ec[ts_col].values
         ax.plot(times, vals, color=YH, lw=1.0, alpha=0.85, label="Conductivity (µS/cm)")
-        ax.fill_between(times, ll, vals, where=(vals>=ll)&(vals<=ul),
-                        color=BH, alpha=0.12)
 
     ax.set_ylabel("Conductivity (µS/cm)", fontsize=9)
     ax.set_title(f"Electrode Conductivity — {month}", fontsize=11, fontweight="bold", pad=8)
@@ -1600,7 +1652,6 @@ def make_biocide_corrosion_chart(k, month_df, ts_col, slug, month):
     if cu is not None and not cu.empty:
         ax2.plot(cu[ts_col], cu[k["cu_col"]], color=YH, lw=1.2, alpha=0.9,
                  label="Corrosion Cu (MPY)")
-        ax2.fill_between(cu[ts_col], 0, cu[k["cu_col"]], color=YH, alpha=0.15)
         ax2.set_ylabel("Copper Corrosion (MPY)", fontsize=9, color=YH)
         ax2.tick_params(axis="y", colors=YH)
         ax2.set_ylim(bottom=0)
@@ -1641,9 +1692,6 @@ def make_traced_product_cell_fouling_chart(k, month_df, ts_col, slug, month):
     if cf is not None and not cf.empty:
         ax2.plot(cf[ts_col], cf[k["cf_col"]], color=RH, lw=1.0, alpha=0.85,
                  label="Cell Fouling (%)")
-        ax2.fill_between(cf[ts_col], CELL_FOULING_THRESHOLD_PCT, cf[k["cf_col"]],
-                         where=(cf[k["cf_col"]] > CELL_FOULING_THRESHOLD_PCT),
-                         color=RH, alpha=0.16, label="Above 30%")
         ax2.axhline(CELL_FOULING_THRESHOLD_PCT, color=RH, lw=1.0, ls=":", alpha=0.75,
                     label="Cell Fouling 30% limit")
         ax2.set_ylabel("Cell Fouling (%)", fontsize=9, color=RH)
@@ -1700,6 +1748,44 @@ def _strip_polymer_consumption(text):
         return text
     sentences = re.split(r"(?<=[.!?])\s+", text)
     return " ".join(sentence for sentence in sentences if "polymer consumption" not in sentence.lower()).strip()
+
+
+def _product_consumption_efficiency_comment(site, controllers, k):
+    records = _load_product_efficiency_inputs(site, controllers)
+    if not records:
+        return ""
+
+    target_annual = sum(record["target_annual_pounds"] for record in records if record.get("target_annual_pounds"))
+    if not target_annual:
+        return ""
+    target_monthly = target_annual / 12
+
+    tp_mean = k.get("tp_mean")
+    tp_sp = k.get("tp_sp")
+    if not tp_mean or not tp_sp:
+        return (
+            f"The target consumption rate is {_fmt_number(target_monthly, 1)} pounds/month whereas current consumption rate could not be estimated "
+            "because Traced Product setpoint data is not available."
+        )
+
+    current_monthly = target_monthly * max(float(tp_mean) / float(tp_sp), 0)
+    difference = current_monthly - target_monthly
+    tolerance = max(1.0, target_monthly * 0.02)
+    comparison = (
+        f"The target consumption rate is {_fmt_number(target_monthly, 1)} pounds/month whereas current consumption rate is {_fmt_number(current_monthly, 1)} pounds."
+    )
+
+    if difference > tolerance:
+        return (
+            f"{comparison} There is increase in consumption by "
+            f"{_fmt_number(difference, 1)} pounds, indicating overdosage."
+        )
+    if difference < -tolerance:
+        return (
+            f"{comparison} There is decrease in consumption rate by "
+            f"{_fmt_number(abs(difference), 1)} pounds, indicating lack of inventory for some time."
+        )
+    return f"{comparison} Target and current consumption match for this reporting period."
 
 
 def _corrosion_narrative(k):
@@ -1923,6 +2009,9 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc, water_l
     add_status(doc, k["tp_status"])
     product_efficiency_text = _strip_polymer_consumption(_strip_status(narr.get("product_efficiency_narrative", "")))
     add_para(doc, product_efficiency_text)
+    product_consumption_text = _product_consumption_efficiency_comment(site, controllers, k)
+    if product_consumption_text:
+        add_para(doc, product_consumption_text)
 
     # ── Proactive System Support ──────────────────────────────────────────────
     add_h2(doc,"Proactive System Support")
@@ -1939,10 +2028,10 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc, water_l
         size=9,italic=True,color=GREY)
 
     add_table(doc,
-        ["Parameter","Context Point","Average","Std Dev","Min","Max",
+        ["Parameter","Context Point","Average",
          "Lower Limit","Upper Limit","% In Range","Status"],
         _perf_rows(k, month_df),
-        [3.2,2.2,1.5,1.5,1.4,1.4,1.7,1.7,1.8,2.2])
+        [3.6,2.5,1.8,1.9,1.9,2.0,2.4])
     doc.add_page_break()
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1986,19 +2075,29 @@ def build_docx(site, month, controllers, k, narr, charts, month_df, coc, water_l
 
 def _perf_rows(k, month_df):
     """Build performance summary rows with full-month stats from parquet."""
-    def col_stats(col):
+    def col_avg(col):
         if col is None or col not in month_df.columns:
-            return "N/A","N/A","N/A","N/A"
+            return "N/A"
         s = pd.to_numeric(month_df[col], errors="coerce").dropna()
-        if s.empty: return "N/A","N/A","N/A","N/A"
-        return (f"{s.mean():.3f}", f"{s.std():.3f}",
-                f"{s.min():.3f}", f"{s.max():.3f}")
+        if s.empty: return "N/A"
+        return f"{s.mean():.3f}"
+
+    def pct_value(col, ll, ul):
+        if col is None or ll is None or ul is None: return None
+        s = pd.to_numeric(month_df.get(col, pd.Series()), errors="coerce").dropna()
+        if s.empty: return None
+        return round(sum((s>=ll)&(s<=ul))/len(s)*100,1)
 
     def pct_str(col, ll, ul):
-        if col is None or ll is None or ul is None: return "–"
-        s = pd.to_numeric(month_df.get(col, pd.Series()), errors="coerce").dropna()
-        if s.empty: return "–"
-        return f"{round(sum((s>=ll)&(s<=ul))/len(s)*100,1)}%"
+        pct = pct_value(col, ll, ul)
+        return f"{pct}%" if pct is not None else "–"
+
+    def performance_status_from_pct(pct):
+        if pct is None:
+            return STATUS_ACCEPTABLE
+        if pct >= 100:
+            return STATUS_EXCELLENT
+        return STATUS_ACCEPTABLE if pct >= 50 else STATUS_CRITICAL
 
     def fmt(v, d=2):
         try: return f"{float(v):.{d}f}" if v not in (None,"NULL","") else "–"
@@ -2018,54 +2117,53 @@ def _perf_rows(k, month_df):
         if sensor_key == "ph":
             return "7.50", "10.00"
         if sensor_key == "turb":
-            return "–", "75.0"
+            return "0.0", "75.0"
         if sensor_key == "cf":
-            return "–", "30.0"
+            return "0.0", "30.0"
         if sensor_key == "orp":
-            return "–", "–"
+            return "200", "600"
         return "–", "–"
 
-    # pH stats from parquet
-    ph_stats = col_stats(k.get("ph_col"))
     ph_ll, ph_ul = get_limits("ph")
-    ph_pct = pct_str(k.get("ph_col"), 7.5, 10.0) if k.get("ph_col") else "–"
+    ph_pct_value = pct_value(k.get("ph_col"), 7.5, 10.0)
+    ph_pct = f"{ph_pct_value}%" if ph_pct_value is not None else "–"
+    ph_status = performance_status_from_pct(ph_pct_value)
 
-    # ORP stats from parquet (show values in table, not in narrative)
-    orp_stats = col_stats(k.get("orp_col"))
+    turb_ll, turb_ul = get_limits("turb")
+    turb_pct_value = pct_value(k.get("turb_col"), 0, 75.0)
+    turb_pct = f"{turb_pct_value}%" if turb_pct_value is not None else "–"
+    turb_status = performance_status_from_pct(turb_pct_value)
 
-    # Turbidity stats from parquet
-    turb_stats = col_stats(k.get("turb_col"))
-
-    # Cell Fouling stats from parquet
-    cf_stats = col_stats(k.get("cf_col"))
+    cf_ll, cf_ul = get_limits("cf")
+    cf_pct_value = pct_value(k.get("cf_col"), 0, CELL_FOULING_THRESHOLD_PCT)
+    cf_pct = f"{cf_pct_value}%" if cf_pct_value is not None else "–"
+    cf_status = performance_status_from_pct(cf_pct_value)
 
     rows = [
         ["Corrosion – MS (MPY)", "ACM Skid",
-         *col_stats(k["ms_col"]), "0.00", "3.00",
+         col_avg(k["ms_col"]), "0.00", "3.00",
          pct_str(k["ms_col"], 0, 3.0),
          status_cell(k['corr_status'])],
         ["Corrosion – Cu (MPY)", "ACM Skid",
-         *col_stats(k["cu_col"]), "0.00", "0.50",
+         col_avg(k["cu_col"]), "0.00", "0.50",
          pct_str(k["cu_col"], 0, 0.5),
          status_cell(k['corr_status'])],
         [f"{prod} (ppm)", "ACM Skid",
-         *col_stats(k["tp_col"]),
+         col_avg(k["tp_col"]),
          fmt(k["tp_ll"],1), fmt(k["tp_ul"],1),
          f"{k['tp_pct']}%" if k['tp_pct'] is not None else "–",
          status_cell(k['tp_status'])],
         ["Conductivity (µS/cm)", "ACM Skid",
-         *col_stats(k["ec_col"]),
+         col_avg(k["ec_col"]),
          fmt(k["ec_ll"],0), fmt(k["ec_ul"],0),
          f"{k['ec_pct']}%" if k['ec_pct'] is not None else "–",
          status_cell(k['ec_status'])],
         ["pH", "ACM Skid",
-         *ph_stats, ph_ll, ph_ul, ph_pct, "ℹ Info"],
-        ["ORP (mV)", "ACM Skid",
-         *orp_stats, "–", "–", "–", "See chart"],
+            col_avg(k.get("ph_col")), ph_ll, ph_ul, ph_pct, status_cell(ph_status)],
         ["Turbidity (NTU)", "ACM Skid",
-         *turb_stats, "–", "75.0", "–", "ℹ Info"],
+            col_avg(k.get("turb_col")), turb_ll, turb_ul, turb_pct, status_cell(turb_status)],
         ["Cell Fouling (%)", "ACM Skid",
-         *cf_stats, "–", "30.0", "–", "ℹ Info"],
+            col_avg(k.get("cf_col")), cf_ll, cf_ul, cf_pct, status_cell(cf_status)],
     ]
     return rows
 

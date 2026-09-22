@@ -2,11 +2,11 @@
   "site": "St. Joseph's Hospital Savannah GA (US)",
   "month": "July 2026",
   "slug": "st_joseph_s_hospital_savannah_ga_us_controllers_84253fab8cc5_july_2026",
-  "report_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\output\\st_joseph_s_hospital_savannah_ga_us_controllers_84253fab8cc5_july_2026_report.docx",
+  "report_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\output\\st_joseph_s_hospital_savannah_ga_us_controllers_84253fab8cc5_july_2026_report_updated_20260923_000502.docx",
   "checklist_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\Report Checklist\\report checklist.xlsx",
-  "total_score": 208.0,
+  "total_score": 206.0,
   "total_max": 214,
-  "percentage": 97.2,
+  "percentage": 96.3,
   "grade": "A",
   "failed_checks": [
     {
@@ -24,6 +24,22 @@
       "score": 0.0,
       "passed": false,
       "detail": ""
+    },
+    {
+      "category": "Report Checklist",
+      "check": "24. Check the biocide dosage is intimer or on/off control .Mention that control type.",
+      "max": 1,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Biocide control type wording checked"
+    },
+    {
+      "category": "Report Checklist",
+      "check": "29. If it's below range, mention to increase biocide dosage. If the range is high, then mention that the biocide dosage will be reduced .",
+      "max": 1,
+      "score": 0.0,
+      "passed": false,
+      "detail": "Biocide control type wording checked"
     }
   ],
   "categories": {
@@ -372,9 +388,9 @@
       ]
     },
     "Report Checklist": {
-      "score": 62,
+      "score": 60.0,
       "max": 62,
-      "pct": 100.0,
+      "pct": 96.8,
       "checks": [
         {
           "category": "Report Checklist",
@@ -564,8 +580,8 @@
           "category": "Report Checklist",
           "check": "24. Check the biocide dosage is intimer or on/off control .Mention that control type.",
           "max": 1,
-          "score": 1,
-          "passed": true,
+          "score": 0.0,
+          "passed": false,
           "detail": "Biocide control type wording checked"
         },
         {
@@ -604,8 +620,8 @@
           "category": "Report Checklist",
           "check": "29. If it's below range, mention to increase biocide dosage. If the range is high, then mention that the biocide dosage will be reduced .",
           "max": 1,
-          "score": 1,
-          "passed": true,
+          "score": 0.0,
+          "passed": false,
           "detail": "Biocide control type wording checked"
         },
         {
