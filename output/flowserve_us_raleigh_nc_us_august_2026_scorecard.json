@@ -2,7 +2,7 @@
   "site": "Flowserve US Raleigh NC (US)",
   "month": "August 2026",
   "slug": "flowserve_us_raleigh_nc_us_august_2026",
-  "report_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\output\\flowserve_us_raleigh_nc_us_august_2026_report_updated_20260908_174023.docx",
+  "report_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\output\\flowserve_us_raleigh_nc_us_august_2026_report.docx",
   "checklist_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\Report Checklist\\report checklist.xlsx",
   "total_score": 200.0,
   "total_max": 226,
@@ -59,19 +59,19 @@
     },
     {
       "category": "Report Checklist",
-      "check": "49. Mention the no.of alarms genertaed that month",
+      "check": "24. Check the biocide dosage is intimer or on/off control .Mention that control type.",
       "max": 1,
       "score": 0.0,
       "passed": false,
-      "detail": "Alarm summary/recommendation checked"
+      "detail": "Biocide control type wording checked"
     },
     {
       "category": "Report Checklist",
-      "check": "50. Mention the alarm and mention the recommendation for it",
+      "check": "29. If it's below range, mention to increase biocide dosage. If the range is high, then mention that the biocide dosage will be reduced .",
       "max": 1,
       "score": 0.0,
       "passed": false,
-      "detail": "Alarm summary/recommendation checked"
+      "detail": "Biocide control type wording checked"
     }
   ],
   "categories": {
@@ -636,8 +636,8 @@
           "category": "Report Checklist",
           "check": "24. Check the biocide dosage is intimer or on/off control .Mention that control type.",
           "max": 1,
-          "score": 1,
-          "passed": true,
+          "score": 0.0,
+          "passed": false,
           "detail": "Biocide control type wording checked"
         },
         {
@@ -676,8 +676,8 @@
           "category": "Report Checklist",
           "check": "29. If it's below range, mention to increase biocide dosage. If the range is high, then mention that the biocide dosage will be reduced .",
           "max": 1,
-          "score": 1,
-          "passed": true,
+          "score": 0.0,
+          "passed": false,
           "detail": "Biocide control type wording checked"
         },
         {
@@ -836,16 +836,16 @@
           "category": "Report Checklist",
           "check": "49. Mention the no.of alarms genertaed that month",
           "max": 1,
-          "score": 0.0,
-          "passed": false,
+          "score": 1,
+          "passed": true,
           "detail": "Alarm summary/recommendation checked"
         },
         {
           "category": "Report Checklist",
           "check": "50. Mention the alarm and mention the recommendation for it",
           "max": 1,
-          "score": 0.0,
-          "passed": false,
+          "score": 1,
+          "passed": true,
           "detail": "Alarm summary/recommendation checked"
         },
         {

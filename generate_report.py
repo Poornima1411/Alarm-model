@@ -24,6 +24,7 @@ import pandas as pd
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
@@ -34,16 +35,61 @@ ROOT       = Path(__file__).parent
 DATA_STORE = ROOT / "data_store"
 OUTPUT_DIR = ROOT / "output"
 CHARTS_DIR = OUTPUT_DIR / "charts"
+TEMPLATE_DIR = ROOT / "Report template"
+REPORT_TEMPLATE_PATH = TEMPLATE_DIR / "Digital Water Report Portrait Template 1.html"
 OUTPUT_DIR.mkdir(exist_ok=True)
 CHARTS_DIR.mkdir(exist_ok=True)
 WATER_LOSS_THRESHOLD_PCT = 3.0
 SETPOINT_MAINTAINED_TOLERANCE_PCT = 3.0
 CELL_FOULING_THRESHOLD_PCT = 30.0
 
-GREEN = RGBColor(0x00,0x85,0x7C); WHITE = RGBColor(0xFF,0xFF,0xFF)
+
+def _load_template_vars():
+    if not REPORT_TEMPLATE_PATH.exists():
+        return {}
+    try:
+        text = REPORT_TEMPLATE_PATH.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return {}
+    return {
+        match.group(1): match.group(2).strip()
+        for match in re.finditer(r"--([a-z0-9-]+)\s*:\s*([^;]+);", text, re.I)
+    }
+
+
+def _rgb_tuple(value, fallback):
+    raw = str(value or "").strip()
+    match = re.search(r"rgba?\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)", raw, re.I)
+    if match:
+        return tuple(max(0, min(255, int(part))) for part in match.groups())
+    match = re.search(r"#([0-9a-f]{6})", raw, re.I)
+    if match:
+        hx = match.group(1)
+        return tuple(int(hx[index:index + 2], 16) for index in (0, 2, 4))
+    return fallback
+
+
+def _rgb_color(value, fallback):
+    r, g, b = _rgb_tuple(value, fallback)
+    return RGBColor(r, g, b)
+
+
+def _hex_color(value, fallback):
+    r, g, b = _rgb_tuple(value, fallback)
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
+TEMPLATE_VARS = _load_template_vars()
+GREEN = _rgb_color(TEMPLATE_VARS.get("sections-title-stripe-color"), (0x00, 0x98, 0x78))
+HEADER_BLUE = _rgb_color(TEMPLATE_VARS.get("header-font-color"), (0x1D, 0x5C, 0x7F))
+LIGHT_TABLE = _rgb_color(TEMPLATE_VARS.get("title-table-highliht-background"), (0xF7, 0xF7, 0xF7))
+BORDER_GREY = _rgb_color(TEMPLATE_VARS.get("report-border-color-light"), (0xD0, 0xD0, 0xD0))
+WHITE = RGBColor(0xFF,0xFF,0xFF)
 AMBER = RGBColor(0xB8,0x86,0x0B); RED   = RGBColor(0xC0,0x00,0x00)
-GREY  = RGBColor(0x44,0x44,0x44)
-GH="#00857C"; BH="#0077BB"; RH="#C00000"; YH="#E07000"
+GREY  = _rgb_color(TEMPLATE_VARS.get("font-light-color"), (0x44, 0x44, 0x44))
+GH = _hex_color(TEMPLATE_VARS.get("sections-title-stripe-color"), (0x00, 0x98, 0x78))
+BH = _hex_color(TEMPLATE_VARS.get("header-font-color"), (0x1D, 0x5C, 0x7F))
+RH="#C00000"; YH="#E07000"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1724,6 +1770,47 @@ def set_bg(cell, hx):
     shd.set(qn("w:fill"),hx.lstrip("#")); tcPr.append(shd)
 
 
+def set_cell_border(cell, color="D0D0D0", size="4"):
+    color_hex = str(color).lstrip("#")
+    tcPr = cell._tc.get_or_add_tcPr()
+    borders = tcPr.first_child_found_in("w:tcBorders")
+    if borders is None:
+        borders = OxmlElement("w:tcBorders")
+        tcPr.append(borders)
+    for edge in ("top", "left", "bottom", "right"):
+        tag = f"w:{edge}"
+        element = borders.find(qn(tag))
+        if element is None:
+            element = OxmlElement(tag)
+            borders.append(element)
+        element.set(qn("w:val"), "single")
+        element.set(qn("w:sz"), size)
+        element.set(qn("w:space"), "0")
+        element.set(qn("w:color"), color_hex)
+
+
+def set_cell_margins(cell, top=90, start=120, bottom=90, end=120):
+    tcPr = cell._tc.get_or_add_tcPr()
+    margins = tcPr.first_child_found_in("w:tcMar")
+    if margins is None:
+        margins = OxmlElement("w:tcMar")
+        tcPr.append(margins)
+    for margin, value in (("top", top), ("start", start), ("bottom", bottom), ("end", end)):
+        element = margins.find(qn(f"w:{margin}"))
+        if element is None:
+            element = OxmlElement(f"w:{margin}")
+            margins.append(element)
+        element.set(qn("w:w"), str(value))
+        element.set(qn("w:type"), "dxa")
+
+
+def apply_report_style(doc):
+    normal = doc.styles["Normal"]
+    normal.font.name = "Arial"
+    normal._element.rPr.rFonts.set(qn("w:eastAsia"), "Arial")
+    normal.font.size = Pt(10)
+
+
 def add_para(doc, text="", size=10, bold=False, color=None, italic=False,
              sb=4, sa=6, align=WD_ALIGN_PARAGRAPH.LEFT):
     p = doc.add_paragraph(); p.alignment = align
@@ -1799,38 +1886,40 @@ def _corrosion_narrative(k):
 
 def add_h1(doc, text):
     p = doc.add_paragraph()
-    p.paragraph_format.space_before=Pt(14); p.paragraph_format.space_after=Pt(4)
-    r = p.add_run(text); r.font.size=Pt(16); r.font.bold=True; r.font.color.rgb=GREEN
-    pPr=p._p.get_or_add_pPr(); pBdr=OxmlElement("w:pBdr"); bot=OxmlElement("w:bottom")
-    bot.set(qn("w:val"),"single"); bot.set(qn("w:sz"),"8")
-    bot.set(qn("w:space"),"4"); bot.set(qn("w:color"),"00857C")
-    pBdr.append(bot)
-    ps=pPr.find(qn("w:pStyle"))
-    if ps is not None: ps.addnext(pBdr)
-    else: pPr.insert(0,pBdr)
+    p.paragraph_format.space_before=Pt(14); p.paragraph_format.space_after=Pt(7)
+    r = p.add_run(f"  {text}"); r.font.size=Pt(12); r.font.bold=True; r.font.color.rgb=WHITE
+    pPr=p._p.get_or_add_pPr()
+    shd=OxmlElement("w:shd"); shd.set(qn("w:val"),"clear"); shd.set(qn("w:color"),"auto")
+    shd.set(qn("w:fill"), GH.lstrip("#")); pPr.append(shd)
 
 
 def add_h2(doc, text):
     p=doc.add_paragraph()
-    p.paragraph_format.space_before=Pt(10); p.paragraph_format.space_after=Pt(3)
+    p.paragraph_format.space_before=Pt(10); p.paragraph_format.space_after=Pt(4)
     r=p.add_run(text); r.font.size=Pt(13); r.font.bold=True
-    r.font.color.rgb=RGBColor(0x00,0x5F,0x58)
+    r.font.color.rgb=HEADER_BLUE
 
 
 def add_h3(doc, text):
     p=doc.add_paragraph()
     p.paragraph_format.space_before=Pt(8); p.paragraph_format.space_after=Pt(2)
     r=p.add_run(text); r.font.size=Pt(11); r.font.bold=True
-    r.font.color.rgb=RGBColor(0x22,0x22,0x22)
+    r.font.color.rgb=RGBColor(0x21,0x25,0x29)
 
 
 def add_status(doc, s):
     label = display_status(s)
-    c = GREEN if label==STATUS_EXCELLENT else (AMBER if label==STATUS_ACCEPTABLE else RED)
+    color = GREEN if label==STATUS_EXCELLENT else (AMBER if label==STATUS_ACCEPTABLE else RED)
     p = doc.add_paragraph()
     p.paragraph_format.space_before=Pt(3); p.paragraph_format.space_after=Pt(5)
-    r1=p.add_run("Status: "); r1.font.size=Pt(10); r1.font.bold=True
-    r2=p.add_run(label);     r2.font.size=Pt(10); r2.font.bold=True; r2.font.color.rgb=c
+    pPr = p._p.get_or_add_pPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), "F7F7F7")
+    pPr.append(shd)
+    r1=p.add_run(" Status: "); r1.font.size=Pt(10); r1.font.bold=True; r1.font.color.rgb=HEADER_BLUE
+    r2=p.add_run(label);     r2.font.size=Pt(10); r2.font.bold=True; r2.font.color.rgb=color
 
 
 def add_img(doc, path, w=6.0, caption=None, fig_num=None):
@@ -1852,7 +1941,7 @@ def add_comment(doc, text):
     p=doc.add_paragraph()
     p.paragraph_format.space_before=Pt(2); p.paragraph_format.space_after=Pt(10)
     label=p.add_run("Comment: ")
-    label.font.size=Pt(9.5); label.font.italic=True; label.font.bold=True; label.font.color.rgb=RGBColor(0x33,0x33,0x33)
+    label.font.size=Pt(9.5); label.font.italic=True; label.font.bold=True; label.font.color.rgb=HEADER_BLUE
     for index, line in enumerate(lines):
         if index:
             p.add_run().add_break()
@@ -1864,13 +1953,15 @@ def add_table(doc, headers, rows, col_cm):
     tbl=doc.add_table(rows=1, cols=len(headers)); tbl.style="Table Grid"
     hdr=tbl.rows[0]
     for i,(cell,h) in enumerate(zip(hdr.cells, headers)):
-        cell.width=Cm(col_cm[i]); set_bg(cell,"00857C")
+        cell.width=Cm(col_cm[i]); cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        set_bg(cell,GH); set_cell_border(cell, BORDER_GREY); set_cell_margins(cell)
         p=cell.paragraphs[0]; p.paragraph_format.space_before=Pt(3); p.paragraph_format.space_after=Pt(3)
         r=p.add_run(h); r.font.bold=True; r.font.size=Pt(9); r.font.color.rgb=WHITE
     for ri, rd in enumerate(rows):
-        row=tbl.add_row(); bg="FFFFFF" if ri%2==0 else "F2F8F7"
+        row=tbl.add_row(); bg="FFFFFF" if ri%2==0 else "F7F7F7"
         for i,(cell,val) in enumerate(zip(row.cells, rd)):
-            cell.width=Cm(col_cm[i]); set_bg(cell,bg)
+            cell.width=Cm(col_cm[i]); cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            set_bg(cell,bg); set_cell_border(cell, BORDER_GREY); set_cell_margins(cell)
             p=cell.paragraphs[0]; p.paragraph_format.space_before=Pt(3); p.paragraph_format.space_after=Pt(3)
             r=p.add_run(str(val)); r.font.size=Pt(9)
     doc.add_paragraph()
@@ -1878,6 +1969,7 @@ def add_table(doc, headers, rows, col_cm):
 
 def build_docx(site, month, controllers, k, narr, charts, month_df, coc, water_loss):
     doc = Document()
+    apply_report_style(doc)
     sec = doc.sections[0]
     sec.page_width=Cm(21.59); sec.page_height=Cm(27.94)
     sec.left_margin=sec.right_margin=Cm(1.9)

@@ -4,9 +4,9 @@
   "slug": "candler_hospital_savannah_ga_us_controllers_84253f5fb67b_84253fab8c75_august_2026",
   "report_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\output\\candler_hospital_savannah_ga_us_controllers_84253f5fb67b_84253fab8c75_august_2026_report.docx",
   "checklist_path": "C:\\Users\\pvenkatesan\\OneDrive - Buckman\\Alarm no.s\\Alarm-model\\Report Checklist\\report checklist.xlsx",
-  "total_score": 195.0,
+  "total_score": 197.0,
   "total_max": 228,
-  "percentage": 85.5,
+  "percentage": 86.4,
   "grade": "B",
   "failed_checks": [
     {
@@ -72,22 +72,6 @@
       "score": 0.0,
       "passed": false,
       "detail": "Expected traced product in range: 0.0%"
-    },
-    {
-      "category": "Report Checklist",
-      "check": "49. Mention the no.of alarms genertaed that month",
-      "max": 1,
-      "score": 0.0,
-      "passed": false,
-      "detail": "Alarm summary/recommendation checked"
-    },
-    {
-      "category": "Report Checklist",
-      "check": "50. Mention the alarm and mention the recommendation for it",
-      "max": 1,
-      "score": 0.0,
-      "passed": false,
-      "detail": "Alarm summary/recommendation checked"
     }
   ],
   "categories": {
@@ -460,9 +444,9 @@
       ]
     },
     "Report Checklist": {
-      "score": 58.0,
+      "score": 60.0,
       "max": 62,
-      "pct": 93.5,
+      "pct": 96.8,
       "checks": [
         {
           "category": "Report Checklist",
@@ -852,16 +836,16 @@
           "category": "Report Checklist",
           "check": "49. Mention the no.of alarms genertaed that month",
           "max": 1,
-          "score": 0.0,
-          "passed": false,
+          "score": 1,
+          "passed": true,
           "detail": "Alarm summary/recommendation checked"
         },
         {
           "category": "Report Checklist",
           "check": "50. Mention the alarm and mention the recommendation for it",
           "max": 1,
-          "score": 0.0,
-          "passed": false,
+          "score": 1,
+          "passed": true,
           "detail": "Alarm summary/recommendation checked"
         },
         {
